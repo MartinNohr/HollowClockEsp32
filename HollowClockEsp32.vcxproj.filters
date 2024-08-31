@@ -18,6 +18,9 @@
     <None Include="src\arduino folders read me.txt">
       <Filter>Misc Files</Filter>
     </None>
+    <None Include="obj\x64\Release\HollowClockEsp32.bin">
+      <Filter>Misc Files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="HollowClockEsp32.ino" />

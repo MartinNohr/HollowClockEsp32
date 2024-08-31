@@ -10,7 +10,7 @@
 #include <time.h>
 SemaphoreHandle_t MutexRotateHandle;
 
-#define HC_VERSION 0  // change this when the settings structure is changed
+#define HC_VERSION 1  // change this when the settings structure is changed
 
 // Motor and clock parameters
 // 2048 * 90 / 12 / 60 = 256
@@ -29,6 +29,7 @@ struct {
     char cWifiID[20] = "NohrNet";
     char cWifiPWD[20] = "8017078120";
     long utcOffsetInSeconds = -7 * 3600;
+	bool bDayLightSaving = true;
 } settings;
 
 // ports used to control the stepper motor
@@ -122,25 +123,27 @@ void TaskMenu(void* params)
 			if (str.isEmpty())
 				str = "?";
 			bool bSave = false;
-			switch (toupper(str[0])) {
+			char ch = str[0];
+			str = str.substring(1);
+			str.trim();
+			switch (toupper(ch)) {
 			case '?':
 				Serial.println("---------------------------");
-				Serial.println(String("Network   : ") + settings.cWifiID);
-				Serial.println(String("Password  : ") + settings.cWifiPWD);
-				Serial.println(String("test mode : ") + settings.bTestMode);
-				Serial.println(String("UTC       : ") + (settings.utcOffsetInSeconds / 3600));
-				Serial.println(String("Delay     : ") + settings.nStepSpeed);
+				Serial.println(String("Network    : ") + settings.cWifiID);
+				Serial.println(String("Password   : ") + settings.cWifiPWD);
+				Serial.println(String("UTC        : ") + (settings.utcOffsetInSeconds / 3600));
+				Serial.println(String("DST        : ") + settings.bDayLightSaving);
+				Serial.println(String("Step Delay : ") + settings.nStepSpeed + " mS");
+				Serial.println(String("Test mode  : ") + settings.bTestMode);
 				Serial.println("---------------------------");
 				Serial.println("N<networkID>  = network name (case sensitive)");
 				Serial.println("P<password>   = password for network (case sensitive)");
 				Serial.println("T             = toggle test mode");
 				Serial.println("U<-12 to +12> = utc offset in hours");
-				Serial.println("D<2 to 10>    = stepper delay in mS");
+				Serial.println("S<2 to 10>    = stepper delay in mS");
 				Serial.println();
 				break;
 			case 'N':
-				str = str.substring(1);
-				str.trim();
 				if (str.length()) {
 					strncpy(settings.cWifiID, str.c_str(), sizeof(settings.cWifiID) - 1);
 					Serial.println("Network Name:" + str);
@@ -148,8 +151,6 @@ void TaskMenu(void* params)
 				bSave = true;
 				break;
 			case 'P':
-				str = str.substring(1);
-				str.trim();
 				if (str.length()) {
 					strncpy(settings.cWifiPWD, str.c_str(), sizeof(settings.cWifiPWD) - 1);
 					Serial.println("Password:" + str);
@@ -161,15 +162,15 @@ void TaskMenu(void* params)
 				bSave = true;
 				break;
 			case 'U':
-				str = str.substring(1);
-				str.trim();
 				settings.utcOffsetInSeconds = str.toInt() * 3600;
 				bSave = true;
 				break;
-			case 'D':
-				str = str.substring(1);
-				str.trim();
+			case 'S':
 				settings.nStepSpeed = str.toInt();
+				bSave = true;
+				break;
+			case 'D':
+				settings.bDayLightSaving = !settings.bDayLightSaving;
 				bSave = true;
 				break;
 			}
@@ -182,27 +183,38 @@ void TaskMenu(void* params)
 	}
 }
 
+/*
+* get the time once per day and compare and correct if necessary
+* TODO: the correction is not there yet
+*/
 void TaskWiFi(void* params)
 {
-    // init the WiFi
+	TickType_t xLastWakeTime;
+	// check the time once per day
+	const TickType_t xFrequency = pdMS_TO_TICKS(24 * 60 * 60 * 1000);
+	// Initialize the xLastWakeTime variable with the current time.
+	xLastWakeTime = xTaskGetTickCount();
+	// init the WiFi
 	Serial.print(String("Connecting to network: ") + settings.cWifiID);
     WiFi.mode(WIFI_STA);
     WiFi.begin(settings.cWifiID, settings.cWifiPWD);
     while (WiFi.status() != WL_CONNECTED) {
         Serial.print(".");
+		rotate(-STEPS_PER_MIN);
+		rotate(STEPS_PER_MIN);
         delay(1000);
     }
     Serial.println("");
 	Serial.println(String("ip:") + WiFi.localIP().toString());
-    configTime(settings.utcOffsetInSeconds, 3600, "north-america.pool.ntp.org");
+	configTime(settings.utcOffsetInSeconds, settings.bDayLightSaving ? 3600 : 0, "north-america.pool.ntp.org");
     getLocalTime(&gtime);
     Serial.println(&gtime, "%A, %B %d %Y %H:%M:%S");
     bGotTime = true;
     vTaskDelay(10);
     for (;;) {
         getLocalTime(&gtime);
-        Serial.println(String(gtime.tm_hour) + ":" + gtime.tm_min);
-        vTaskDelay(pdMS_TO_TICKS(60000));
+		Serial.println("Time check : " + String(gtime.tm_hour) + ":" + gtime.tm_min);
+		vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
 
