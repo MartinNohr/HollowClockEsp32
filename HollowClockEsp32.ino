@@ -198,12 +198,21 @@ void TaskWiFi(void* params)
 	Serial.print(String("Connecting to network: ") + settings.cWifiID);
     WiFi.mode(WIFI_STA);
     WiFi.begin(settings.cWifiID, settings.cWifiPWD);
-    while (WiFi.status() != WL_CONNECTED) {
+	// wait 60 seconds for the network
+	int waitForNetwork = 60;
+	while (waitForNetwork-- && WiFi.status() != WL_CONNECTED) {
         Serial.print(".");
+		// wiggle the minutes while waiting for the network
 		rotate(-STEPS_PER_MIN);
 		rotate(STEPS_PER_MIN);
         delay(1000);
     }
+	// if no network wiggle 5 minutes back and forth
+	if (WiFi.status() != WL_CONNECTED) {
+		// running without a network, but we can wait here for a "smart config"
+		rotate(-5 * STEPS_PER_MIN);
+		rotate(5 * STEPS_PER_MIN);
+	}
     Serial.println("");
 	Serial.println(String("ip:") + WiFi.localIP().toString());
 	configTime(settings.utcOffsetInSeconds, settings.bDayLightSaving ? 3600 : 0, "north-america.pool.ntp.org");
