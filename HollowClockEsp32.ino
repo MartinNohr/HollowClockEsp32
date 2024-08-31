@@ -200,7 +200,7 @@ void TaskWiFi(void* params)
     WiFi.begin(settings.cWifiID, settings.cWifiPWD);
 	// wait 60 seconds for the network
 	int waitForNetwork = 60;
-	while (waitForNetwork-- && WiFi.status() != WL_CONNECTED) {
+	while (WiFi.status() != WL_CONNECTED && waitForNetwork--) {
         Serial.print(".");
 		// wiggle the minutes while waiting for the network
 		rotate(-STEPS_PER_MIN);
