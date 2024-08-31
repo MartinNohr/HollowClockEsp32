@@ -216,7 +216,13 @@ void TaskWiFi(void* params)
     Serial.println("");
 	Serial.println(String("ip:") + WiFi.localIP().toString());
 	configTime(settings.utcOffsetInSeconds, settings.bDayLightSaving ? 3600 : 0, "north-america.pool.ntp.org");
-    getLocalTime(&gtime);
+	// get time, it might fail so try again in a minute
+	gtime.tm_year = 0;
+	while (gtime.tm_year == 0) {
+		getLocalTime(&gtime);
+		if (gtime.tm_year == 0)
+			vTaskDelay(pdMS_TO_TICKS(60 * 1000));
+	}
     Serial.println(&gtime, "%A, %B %d %Y %H:%M:%S");
     bGotTime = true;
     vTaskDelay(10);
