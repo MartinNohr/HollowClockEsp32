@@ -140,6 +140,7 @@ void TaskMenu(void* params)
 				Serial.println("P<password>   = password for network (case sensitive)");
 				Serial.println("T             = toggle test mode");
 				Serial.println("U<-12 to +12> = utc offset in hours");
+				Serial.println("D             = tobble daylight saving");
 				Serial.println("S<2 to 10>    = stepper delay in mS");
 				Serial.println();
 				break;
@@ -217,10 +218,10 @@ void TaskWiFi(void* params)
 	Serial.println(String("ip:") + WiFi.localIP().toString());
 	configTime(settings.utcOffsetInSeconds, settings.bDayLightSaving ? 3600 : 0, "north-america.pool.ntp.org");
 	// get time, it might fail so try again in a minute
-	gtime.tm_year = 0;
-	while (gtime.tm_year == 0) {
+	gtime.tm_year = 1;
+	while (gtime.tm_year == 1) {
 		getLocalTime(&gtime);
-		if (gtime.tm_year == 0)
+		if (gtime.tm_year == 1)
 			vTaskDelay(pdMS_TO_TICKS(60 * 1000));
 	}
     Serial.println(&gtime, "%A, %B %d %Y %H:%M:%S");
