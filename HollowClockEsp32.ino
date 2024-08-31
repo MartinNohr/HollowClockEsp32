@@ -10,7 +10,7 @@
 #include <time.h>
 SemaphoreHandle_t MutexRotateHandle;
 
-#define HC_VERSION 1  // change this when the settings structure is changed
+#define HC_VERSION 0  // change this when the settings structure is changed
 
 // Motor and clock parameters
 // 2048 * 90 / 12 / 60 = 256
@@ -142,7 +142,7 @@ void TaskMenu(void* params)
 				Serial.println("P<password>   = password for network (case sensitive)");
 				Serial.println("T             = toggle test mode");
 				Serial.println("U<-12 to +12> = utc offset in hours");
-				Serial.println("D             = tobble daylight saving");
+				Serial.println("D             = toggle daylight saving");
 				Serial.println("S<2 to 10>    = stepper delay in mS");
 				Serial.println();
 				break;
@@ -218,13 +218,9 @@ void TaskWiFi(void* params)
 	}
     Serial.println("");
 	Serial.println(String("ip:") + WiFi.localIP().toString());
-	configTime(settings.utcOffsetInSeconds, settings.bDayLightSaving ? 3600 : 0, "north-america.pool.ntp.org");
-	// get time, it might fail so try again in a minute
-	gtime.tm_year = 1;
-	while (gtime.tm_year == 1) {
-		getLocalTime(&gtime);
-		if (gtime.tm_year == 1)
-			vTaskDelay(pdMS_TO_TICKS(60 * 1000));
+	configTime(settings.utcOffsetInSeconds, settings.bDayLightSaving ? 3600 : 0, "pool.ntp.org");
+	while (!getLocalTime(&gtime)) {
+		vTaskDelay(1000);
 	}
     Serial.println(&gtime, "%A, %B %d %Y %H:%M:%S");
     bGotTime = true;
