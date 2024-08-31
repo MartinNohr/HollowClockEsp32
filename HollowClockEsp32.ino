@@ -129,6 +129,8 @@ void TaskMenu(void* params)
 			switch (toupper(ch)) {
 			case '?':
 				Serial.println("---------------------------");
+				Serial.print(String("Last Sync  : "));
+				Serial.println(&gtime, "%A, %B %d %Y %H:%M:%S");
 				Serial.println(String("Network    : ") + settings.cWifiID);
 				Serial.println(String("Password   : ") + settings.cWifiPWD);
 				Serial.println(String("UTC        : ") + (settings.utcOffsetInSeconds / 3600));
