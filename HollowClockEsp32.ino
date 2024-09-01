@@ -98,6 +98,8 @@ void TaskMinutes(void* params)
     if (howfar > 6 * 60) {
         howfar -= 12 * 60;
     }
+	// since we move 1 minute right away, let's subtract it first
+	rotate(-STEPS_PER_MIN);
     // assume starting at noon
     rotate(STEPS_PER_MIN * howfar);
     for (;;) {
