@@ -11,7 +11,7 @@
 
 SemaphoreHandle_t MutexRotateHandle;
 
-#define HC_VERSION 2  // change this when the settings structure is changed
+#define HC_VERSION 0  // change this when the settings structure is changed
 
 // Motor and clock parameters
 // 2048 * 90 / 12 / 60 = 256
@@ -30,6 +30,7 @@ struct {
     char cWifiID[20] = "";
     char cWifiPWD[20] = "";
     long utcOffsetInSeconds = -7 * 3600;
+	bool bDayLightSaving = true;
 } settings;
 
 // ports used to control the stepper motor
@@ -81,10 +82,9 @@ struct tm gtime;
 
 void TaskMinutes(void* params)
 {
-	unsigned long secCounter = 0;
     // use this to make task run every second
     TickType_t xLastWakeTime;
-	const TickType_t xFrequency = pdMS_TO_TICKS(1000);
+	const TickType_t xFrequency = pdMS_TO_TICKS(1000 * 60);
     // Initialize the xLastWakeTime variable with the current time.
     xLastWakeTime = xTaskGetTickCount();
     Serial.println("waiting for internet time");
@@ -104,7 +104,7 @@ void TaskMinutes(void* params)
     // assume starting at noon
     rotate(STEPS_PER_MIN * howfar);
     for (;;) {
-		if (!settings.bTestMode && (secCounter++ % 60 == 0)) {
+		if (!settings.bTestMode) {
 			rotate(STEPS_PER_MIN + SAFETY_MOTION); // go too far to handle ratchet (might not be there if 0)
 			if (SAFETY_MOTION)
 				rotate(-SAFETY_MOTION); // alignment
@@ -125,7 +125,7 @@ void TaskMenu(void* params)
 			Serial.println("Received:" + str);
 			if (str.isEmpty())
 				str = "?";
-			bool bSave = true;
+			bool bSave = false;
 			char ch = str[0];
 			str = str.substring(1);
 			str.trim();
@@ -137,37 +137,47 @@ void TaskMenu(void* params)
 				Serial.println(String("Network    : ") + settings.cWifiID);
 				Serial.println(String("Password   : ") + settings.cWifiPWD);
 				Serial.println(String("UTC        : ") + (settings.utcOffsetInSeconds / 3600));
+				Serial.println(String("DST        : ") + settings.bDayLightSaving);
 				Serial.println(String("Step Delay : ") + settings.nStepSpeed + " mS");
 				Serial.println(String("Test mode  : ") + settings.bTestMode);
 				Serial.println("---------------------------");
 				Serial.println("N<networkID>  = network name (case sensitive)");
 				Serial.println("P<password>   = password for network (case sensitive)");
-				Serial.println("U<-12 to +12> = utc offset in hours");
-				Serial.println("S<2 to 10>    = stepper delay in mS");
 				Serial.println("T             = toggle test mode");
+				Serial.println("U<-12 to +12> = utc offset in hours");
+				Serial.println("D             = toggle daylight saving");
+				Serial.println("S<2 to 10>    = stepper delay in mS");
 				Serial.println();
-				bSave = false;
 				break;
 			case 'N':
 				if (str.length()) {
 					strncpy(settings.cWifiID, str.c_str(), sizeof(settings.cWifiID) - 1);
 					Serial.println("Network Name:" + str);
 				}
+				bSave = true;
 				break;
 			case 'P':
 				if (str.length()) {
 					strncpy(settings.cWifiPWD, str.c_str(), sizeof(settings.cWifiPWD) - 1);
 					Serial.println("Password:" + str);
 				}
+				bSave = true;
 				break;
 			case 'T':
 				settings.bTestMode = !settings.bTestMode;
+				bSave = true;
 				break;
 			case 'U':
 				settings.utcOffsetInSeconds = str.toInt() * 3600;
+				bSave = true;
 				break;
 			case 'S':
 				settings.nStepSpeed = str.toInt();
+				bSave = true;
+				break;
+			case 'D':
+				settings.bDayLightSaving = !settings.bDayLightSaving;
+				bSave = true;
 				break;
 			}
 			if (bSave) {
@@ -197,66 +207,49 @@ void TaskWiFi(void* params)
 		WiFi.beginSmartConfig();
 		//Wait for SmartConfig packet from mobile
 		Serial.println("Waiting for SmartConfig.");
-		int waitForSmartConfig = 2 * 60;
-		while (waitForSmartConfig-- && !WiFi.smartConfigDone()) {
+		while (!WiFi.smartConfigDone()) {
+			delay(500);
 			Serial.print(".");
 			// wiggle to show we are waiting for config from phone
-			rotate(1 * STEPS_PER_MIN);
-			rotate(-1 * STEPS_PER_MIN);
-			vTaskDelay(pdMS_TO_TICKS(400));
-		}
-		if (WiFi.smartConfigDone()) {
-			Serial.println("SmartConfig received.");
-			Serial.println(String("host:") + WiFi.SSID());
-			Serial.println(String("pass:") + WiFi.psk());
-			strncpy(settings.cWifiID, WiFi.SSID().c_str(), sizeof(settings.cWifiID));
-			strncpy(settings.cWifiPWD, WiFi.psk().c_str(), sizeof(settings.cWifiPWD));
-			EEPROM.put(0, settings);
-			EEPROM.commit();
-			rotate(-5 * STEPS_PER_MIN);
-			rotate(5 * STEPS_PER_MIN);
-		}
-		WiFi.stopSmartConfig();
-		Serial.println();
-	}
-	if (settings.cWifiID[0] != '\0') {
-		Serial.print(String("Connecting to network: ") + settings.cWifiID);
-		WiFi.begin(settings.cWifiID, settings.cWifiPWD);
-		// wait for the network
-		int waitForNetwork = 4 * 60;
-		while (waitForNetwork-- && WiFi.status() != WL_CONNECTED) {
-			Serial.print(".");
-			// wiggle the minutes while waiting for the network
-			rotate(-STEPS_PER_MIN);
-			rotate(STEPS_PER_MIN);
-			vTaskDelay(pdMS_TO_TICKS(400));
-		}
-		// if no network wiggle 5 minutes back and forth
-		if (WiFi.status() != WL_CONNECTED) {
-			// running without a network
-			rotate(-10 * STEPS_PER_MIN);
-			rotate(10 * STEPS_PER_MIN);
-			// timed out, so clear the network settings
-			settings.cWifiID[0] = '\0';
-			settings.cWifiPWD[0] = '\0';
-			Serial.println("Network timed out, clearing network setting");
+			rotate(-4 * STEPS_PER_MIN);
+			rotate(4 * STEPS_PER_MIN);
 		}
 		Serial.println("");
-		Serial.println(String("ip:") + WiFi.localIP().toString());
-		configTime(settings.utcOffsetInSeconds, /* daylight saving */0, "pool.ntp.org");
-		while (!getLocalTime(&gtime)) {
-			vTaskDelay(1000);
-		}
-		Serial.println(&gtime, "%A, %B %d %Y %H:%M:%S");
-		bGotTime = true;
-		vTaskDelay(10);
-		// get the epoch time, we'll use this later
-		time_t et;
-		time(&et);
+		Serial.println("SmartConfig received.");
+		Serial.println(String("host:") + WiFi.SSID());
+		Serial.println(String("pass:") + WiFi.psk());
+		strncpy(settings.cWifiID, WiFi.SSID().c_str(), sizeof(settings.cWifiID));
+		strncpy(settings.cWifiPWD, WiFi.psk().c_str(), sizeof(settings.cWifiPWD));
+		EEPROM.put(0, settings);
+		EEPROM.commit();
 	}
-	// let the clock run anyway
-	bGotTime = true;
-	for (;;) {
+	Serial.print(String("Connecting to network: ") + settings.cWifiID);
+	WiFi.begin(settings.cWifiID, settings.cWifiPWD);
+	// wait 60 seconds for the network
+	int waitForNetwork = 60;
+	while (WiFi.status() != WL_CONNECTED && waitForNetwork--) {
+        Serial.print(".");
+		// wiggle the minutes while waiting for the network
+		rotate(-STEPS_PER_MIN);
+		rotate(STEPS_PER_MIN);
+        delay(1000);
+    }
+	// if no network wiggle 5 minutes back and forth
+	if (WiFi.status() != WL_CONNECTED) {
+		// running without a network, but we can wait here for a "smart config"
+		rotate(-5 * STEPS_PER_MIN);
+		rotate(5 * STEPS_PER_MIN);
+	}
+    Serial.println("");
+	Serial.println(String("ip:") + WiFi.localIP().toString());
+	configTime(settings.utcOffsetInSeconds, settings.bDayLightSaving ? 3600 : 0, "pool.ntp.org");
+	while (!getLocalTime(&gtime)) {
+		vTaskDelay(1000);
+	}
+    Serial.println(&gtime, "%A, %B %d %Y %H:%M:%S");
+    bGotTime = true;
+    vTaskDelay(10);
+    for (;;) {
         getLocalTime(&gtime);
 		Serial.println("Time check : " + String(gtime.tm_hour) + ":" + gtime.tm_min);
 		vTaskDelayUntil(&xLastWakeTime, xFrequency);
