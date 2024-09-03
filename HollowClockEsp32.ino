@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <wifi.h>
 #include <time.h>
+
 SemaphoreHandle_t MutexRotateHandle;
 
 #define HC_VERSION 0  // change this when the settings structure is changed
@@ -26,8 +27,8 @@ struct {
     bool bTestMode = false;
     int nStepSpeed = 2;
     int nSafetyMotion = 0;
-    char cWifiID[20] = "NohrNet";
-    char cWifiPWD[20] = "8017078120";
+    char cWifiID[20] = "";
+    char cWifiPWD[20] = "";
     long utcOffsetInSeconds = -7 * 3600;
 	bool bDayLightSaving = true;
 } settings;
@@ -200,9 +201,30 @@ void TaskWiFi(void* params)
 	// Initialize the xLastWakeTime variable with the current time.
 	xLastWakeTime = xTaskGetTickCount();
 	// init the WiFi
+    WiFi.mode(WIFI_AP_STA);
+	// if no network, try and get setup
+	if (settings.cWifiID[0] == '\0') {
+		WiFi.beginSmartConfig();
+		//Wait for SmartConfig packet from mobile
+		Serial.println("Waiting for SmartConfig.");
+		while (!WiFi.smartConfigDone()) {
+			delay(500);
+			Serial.print(".");
+			// wiggle to show we are waiting for config from phone
+			rotate(-4 * STEPS_PER_MIN);
+			rotate(4 * STEPS_PER_MIN);
+		}
+		Serial.println("");
+		Serial.println("SmartConfig received.");
+		Serial.println(String("host:") + WiFi.SSID());
+		Serial.println(String("pass:") + WiFi.psk());
+		strncpy(settings.cWifiID, WiFi.SSID().c_str(), sizeof(settings.cWifiID));
+		strncpy(settings.cWifiPWD, WiFi.psk().c_str(), sizeof(settings.cWifiPWD));
+		EEPROM.put(0, settings);
+		EEPROM.commit();
+	}
 	Serial.print(String("Connecting to network: ") + settings.cWifiID);
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(settings.cWifiID, settings.cWifiPWD);
+	WiFi.begin(settings.cWifiID, settings.cWifiPWD);
 	// wait 60 seconds for the network
 	int waitForNetwork = 60;
 	while (WiFi.status() != WL_CONNECTED && waitForNetwork--) {
