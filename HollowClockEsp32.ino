@@ -296,9 +296,6 @@ void TaskServer(void* params)
 		vTaskDelay(pdMS_TO_TICKS(1000));
 	if (!MDNS.begin("hollowclock")) {   // Set the hostname to "hollowclock.local"
 		Serial.println("Error setting up MDNS responder!");
-		while (1) {
-			delay(1000);
-		}
 	}
 	server.begin();
 	for (;;) {
@@ -329,12 +326,10 @@ void TaskServer(void* params)
 							//Serial.println(header);
 							// turns DST on and off
 							if (header.indexOf("GET /dst/on") >= 0) {
-								Serial.println("DST on");
 								settings.bDST = false;
 								adjustDST = -1;
 							}
 							else if (header.indexOf("GET /dst/off") >= 0) {
-								Serial.println("DST off");
 								settings.bDST = true;
 								adjustDST = 1;
 							}
@@ -353,6 +348,7 @@ void TaskServer(void* params)
 							// Web Page Heading
 							client.println("<body><h1>Hollow Clock</h1>");
 
+							client.println(String("<p>Time ") + gtime.tm_hour + ":" + gtime.tm_min + "</p>");
 							// Display current state, and ON/OFF buttons for DST 
 							client.println(String("<p>DST is ") + (settings.bDST ? "on" : "off") + "</p>");
 							// If the DST is off, it displays the ON button       
@@ -387,10 +383,10 @@ void TaskServer(void* params)
 			Serial.println("Client disconnected.");
 			Serial.println("");
 			// adjust DST if necessary
-			if (adjustDST == 1)
-				rotate(60 * STEPS_PER_MIN);
-			else if (adjustDST == -1)
-				rotate(-60 * STEPS_PER_MIN);
+			//if (adjustDST == 1)
+			//	rotate(60 * STEPS_PER_MIN);
+			//else if (adjustDST == -1)
+			//	rotate(-60 * STEPS_PER_MIN);
 		}
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}
