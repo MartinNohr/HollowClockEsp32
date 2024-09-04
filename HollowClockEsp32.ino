@@ -7,11 +7,12 @@
 #include <freertos.h>
 #include <stdio.h>
 #include <wifi.h>
+#include <ESPmDNS.h>
 #include <time.h>
 
 SemaphoreHandle_t MutexRotateHandle;
 
-#define HC_VERSION 2  // change this when the settings structure is changed
+#define HC_VERSION 3  // change this when the settings structure is changed
 
 // Motor and clock parameters
 // 2048 * 90 / 12 / 60 = 256
@@ -30,6 +31,7 @@ struct {
     char cWifiID[20] = "";
     char cWifiPWD[20] = "";
     long utcOffsetInSeconds = -7 * 3600;
+	bool bDST = false;
 } settings;
 
 // Set web server port number to 80
@@ -142,12 +144,14 @@ void TaskMenu(void* params)
 				Serial.println(String("Network    : ") + settings.cWifiID);
 				Serial.println(String("Password   : ") + settings.cWifiPWD);
 				Serial.println(String("UTC        : ") + (settings.utcOffsetInSeconds / 3600));
+				Serial.println(String("DST        : ") + (settings.bDST ? "ON" : "OFF"));
 				Serial.println(String("Step Delay : ") + settings.nStepSpeed + " mS");
-				Serial.println(String("Test mode  : ") + settings.bTestMode);
+				Serial.println(String("Test mode  : ") + (settings.bTestMode ? "ON" : "OFF"));
 				Serial.println("---------------------------");
 				Serial.println("N<networkID>  = network name (case sensitive)");
 				Serial.println("P<password>   = password for network (case sensitive)");
 				Serial.println("U<-12 to +12> = utc offset in hours");
+				Serial.println("D             = toggle daylight saving (DST)");
 				Serial.println("S<2 to 10>    = stepper delay in mS");
 				Serial.println("T             = toggle test mode");
 				Serial.println();
@@ -170,6 +174,11 @@ void TaskMenu(void* params)
 				break;
 			case 'U':
 				settings.utcOffsetInSeconds = str.toInt() * 3600;
+				break;
+			case 'D':
+				settings.bDST = !settings.bDST;
+				// adjust the time
+				rotate((settings.bDST ? 1 : -1) * 60 * STEPS_PER_MIN);
 				break;
 			case 'S':
 				settings.nStepSpeed = str.toInt();
@@ -251,7 +260,7 @@ void TaskWiFi(void* params)
 		}
 		Serial.println("");
 		Serial.println(String("ip:") + WiFi.localIP().toString());
-		configTime(settings.utcOffsetInSeconds, /* daylight saving */0, "pool.ntp.org");
+		configTime(settings.utcOffsetInSeconds, settings.bDST ? 3600 : 0, "pool.ntp.org");
 		while (!getLocalTime(&gtime)) {
 			vTaskDelay(1000);
 		}
@@ -285,12 +294,18 @@ void TaskServer(void* params)
 	// wait for WiFi to be ready
 	while (!bWifiConnected)
 		vTaskDelay(pdMS_TO_TICKS(1000));
+	if (!MDNS.begin("hollowclock")) {   // Set the hostname to "hollowclock.local"
+		Serial.println("Error setting up MDNS responder!");
+		while (1) {
+			delay(1000);
+		}
+	}
 	server.begin();
-	bool ledState = false;
 	for (;;) {
 		WiFiClient client = server.available();   // Listen for incoming clients
 
 		if (client) {                             // If a new client connects,
+			int adjustDST = 0;
 			currentTime = millis();
 			previousTime = currentTime;
 			Serial.println("New Client.");          // print a message out in the serial port
@@ -312,14 +327,16 @@ void TaskServer(void* params)
 							client.println("Connection: close");
 							client.println();
 							//Serial.println(header);
-							// turns the GPIOs on and off
-							if (header.indexOf("GET /26/on") >= 0) {
-								Serial.println("GPIO 26 on");
-								ledState = false;
+							// turns DST on and off
+							if (header.indexOf("GET /dst/on") >= 0) {
+								Serial.println("DST on");
+								settings.bDST = false;
+								adjustDST = -1;
 							}
-							else if (header.indexOf("GET /26/off") >= 0) {
-								Serial.println("GPIO 26 off");
-								ledState = true;
+							else if (header.indexOf("GET /dst/off") >= 0) {
+								Serial.println("DST off");
+								settings.bDST = true;
+								adjustDST = 1;
 							}
 
 							// Display the HTML web page
@@ -336,15 +353,16 @@ void TaskServer(void* params)
 							// Web Page Heading
 							client.println("<body><h1>Hollow Clock</h1>");
 
-							// Display current state, and ON/OFF buttons for GPIO 26  
-							client.println(String("<p>GPIO 26 - State ") + (ledState ? "on" : "off") + "</p>");
-							// If the output26State is off, it displays the ON button       
-							if (ledState) {
-								client.println("<p><a href=\"/26/on\"><button class=\"button\">ON</button></a></p>");
+							// Display current state, and ON/OFF buttons for DST 
+							client.println(String("<p>DST is ") + (settings.bDST ? "on" : "off") + "</p>");
+							// If the DST is off, it displays the ON button       
+							if (settings.bDST) {
+								client.println("<p><a href=\"/dst/on\"><button class=\"button\">ON</button></a></p>");
 							}
 							else {
-								client.println("<p><a href=\"/26/off\"><button class=\"button button2\">OFF</button></a></p>");
+								client.println("<p><a href=\"/dst/off\"><button class=\"button button2\">OFF</button></a></p>");
 							}
+							client.println(String("<p>UTC = ") + settings.utcOffsetInSeconds / 60 / 60 + "</p>");
 
 							client.println("</body></html>");
 
@@ -368,6 +386,11 @@ void TaskServer(void* params)
 			client.stop();
 			Serial.println("Client disconnected.");
 			Serial.println("");
+			// adjust DST if necessary
+			if (adjustDST == 1)
+				rotate(60 * STEPS_PER_MIN);
+			else if (adjustDST == -1)
+				rotate(-60 * STEPS_PER_MIN);
 		}
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}
@@ -388,8 +411,6 @@ void setup()
     delay(500);
     Serial.println("clock starting");
     MutexRotateHandle = xSemaphoreCreateMutex();
-    //rotate(-STEPS_PER_MIN * 2); // initialize
-    //rotate(STEPS_PER_MIN * 1);
     EEPROM.begin(512);
     int checkVer;
     EEPROM.get(0, checkVer);
@@ -405,7 +426,7 @@ void setup()
         Serial.println("Loaded default settings");
     }
     xTaskCreate(TaskMinutes, "MINUTES", 1000, NULL, 3, &TaskClockMinuteHandle);
-    xTaskCreate(TaskMenu, "MENU", 2000, NULL, 4, &TaskMenuHandle);
+    xTaskCreate(TaskMenu, "MENU", 2000, NULL, 6, &TaskMenuHandle);
     xTaskCreate(TaskWiFi, "WIFI", 4000, NULL, 2, &TaskWifiHandle);
 	xTaskCreate(TaskServer, "SERVER", 10000, NULL, 5, &TaskServerHandle);
 }
