@@ -154,6 +154,8 @@ void TaskMenu(void* params)
 				Serial.println("D             = toggle daylight saving (DST)");
 				Serial.println("S<2 to 10>    = stepper delay in mS");
 				Serial.println("T             = toggle test mode");
+				Serial.println("+             = add one minute");
+				Serial.println("-             = subtract one minute");
 				Serial.println();
 				bSave = false;
 				break;
@@ -182,6 +184,12 @@ void TaskMenu(void* params)
 				break;
 			case 'S':
 				settings.nStepSpeed = str.toInt();
+				break;
+			case '+':
+				rotate(STEPS_PER_MIN);
+				break;
+			case '-':
+				rotate(-STEPS_PER_MIN);
 				break;
 			}
 			if (bSave) {
@@ -333,6 +341,12 @@ void TaskServer(void* params)
 								settings.bDST = true;
 								adjustDST = 1;
 							}
+							else if (header.indexOf("GET /addminute") >= 0) {
+								rotate(STEPS_PER_MIN);
+							}
+							else if (header.indexOf("GET /subminute") >= 0) {
+								rotate(-STEPS_PER_MIN);
+							}
 
 							// Display the HTML web page
 							client.println("<!DOCTYPE html><html>");
@@ -359,6 +373,8 @@ void TaskServer(void* params)
 								client.println("<p><a href=\"/dst/off\"><button class=\"button button2\">OFF</button></a></p>");
 							}
 							client.println(String("<p>UTC = ") + settings.utcOffsetInSeconds / 60 / 60 + "</p>");
+							client.println("<p><a href=\"/addminute\"><button class=\"button\">Add Minute</button></a></p>");
+							client.println("<p><a href=\"/subminute\"><button class=\"button\">Subtract Minute</button></a></p>");
 
 							client.println("</body></html>");
 
@@ -422,7 +438,7 @@ void setup()
         Serial.println("Loaded default settings");
     }
     xTaskCreate(TaskMinutes, "MINUTES", 1000, NULL, 3, &TaskClockMinuteHandle);
-    xTaskCreate(TaskMenu, "MENU", 2000, NULL, 6, &TaskMenuHandle);
+    xTaskCreate(TaskMenu, "MENU", 9000, NULL, 6, &TaskMenuHandle);
     xTaskCreate(TaskWiFi, "WIFI", 4000, NULL, 2, &TaskWifiHandle);
 	xTaskCreate(TaskServer, "SERVER", 10000, NULL, 5, &TaskServerHandle);
 }
@@ -434,4 +450,8 @@ void loop()
 		rotate(60 * STEPS_PER_MIN);
     }
     vTaskDelay(pdMS_TO_TICKS(1000));
+	//Serial.println(String("mins: ") + uxTaskGetStackHighWaterMark(TaskClockMinuteHandle));
+	//Serial.println(String("menu: ") + uxTaskGetStackHighWaterMark(TaskMenuHandle));
+	//Serial.println(String("wifi: ") + uxTaskGetStackHighWaterMark(TaskWifiHandle));
+	//Serial.println(String("srvr: ") + uxTaskGetStackHighWaterMark(TaskServerHandle));
 }
