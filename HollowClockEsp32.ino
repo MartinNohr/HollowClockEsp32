@@ -154,8 +154,8 @@ void TaskMenu(void* params)
 				Serial.println("D             = toggle daylight saving (DST)");
 				Serial.println("S<2 to 10>    = stepper delay in mS");
 				Serial.println("T             = toggle test mode");
-				Serial.println("+             = add one minute");
-				Serial.println("-             = subtract one minute");
+				Serial.println("+<n>          = add one or more minutes");
+				Serial.println("-<n>          = subtract one or more minutes");
 				Serial.println();
 				bSave = false;
 				break;
@@ -186,10 +186,20 @@ void TaskMenu(void* params)
 				settings.nStepSpeed = str.toInt();
 				break;
 			case '+':
-				rotate(STEPS_PER_MIN);
+				if (str.length()) {
+					rotate(str.toInt() * STEPS_PER_MIN);
+				}
+				else {
+					rotate(STEPS_PER_MIN);
+				}
 				break;
 			case '-':
-				rotate(-STEPS_PER_MIN);
+				if (str.length()) {
+					rotate(-str.toInt() * STEPS_PER_MIN);
+				}
+				else {
+					rotate(-STEPS_PER_MIN);
+				}
 				break;
 			}
 			if (bSave) {
@@ -415,7 +425,7 @@ void setup()
     pinMode(port[2], OUTPUT);
     pinMode(port[3], OUTPUT);
 	delay(500);
-	Serial.begin(9600);
+	Serial.begin(115200);
     while (!Serial.availableForWrite()) {
         delay(10);
     }
