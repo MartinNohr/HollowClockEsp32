@@ -9,6 +9,8 @@
 #include <wifi.h>
 #include <ESPmDNS.h>
 #include <time.h>
+#include <fs.h>
+#include <spiffs.h>
 
 SemaphoreHandle_t MutexRotateHandle;
 
@@ -261,7 +263,7 @@ void TaskWiFi(void* params)
 			// wiggle the minutes while waiting for the network
 			rotate(-STEPS_PER_MIN);
 			rotate(STEPS_PER_MIN);
-			vTaskDelay(pdMS_TO_TICKS(400));
+			vTaskDelay(pdMS_TO_TICKS(250));
 		}
 		// if no network wiggle 5 minutes back and forth
 		if (WiFi.status() != WL_CONNECTED) {
@@ -271,6 +273,8 @@ void TaskWiFi(void* params)
 			// timed out, so clear the network settings
 			settings.cWifiID[0] = '\0';
 			settings.cWifiPWD[0] = '\0';
+			EEPROM.put(0, settings);
+			EEPROM.commit();
 			Serial.println("Network timed out, clearing network setting");
 		}
 		else {
@@ -293,7 +297,8 @@ void TaskWiFi(void* params)
 	bGotTime = true;
 	for (;;) {
         getLocalTime(&gtime);
-		Serial.println("Time check : " + String(gtime.tm_hour) + ":" + gtime.tm_min);
+		Serial.printf("Time value : %02d:%02d\n\r", gtime.tm_hour, gtime.tm_min);
+		//Serial.println("Time check : " + String(gtime.tm_hour) + ":" + gtime.tm_min);
 		vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
@@ -418,6 +423,37 @@ void TaskServer(void* params)
 	}
 }
 
+void listDir(fs::FS& fs, const char* dirname, uint8_t levels)
+{
+	Serial.printf("Listing directory: %s\r\n", dirname);
+	File root = fs.open(dirname);
+	if (!root) {
+		Serial.println("- failed to open directory");
+		return;
+	}
+	if (!root.isDirectory()) {
+		Serial.println(" - not a directory");
+		return;
+	}
+	File file = root.openNextFile();
+	while (file) {
+		if (file.isDirectory()) {
+			Serial.print("  DIR : ");
+			Serial.println(file.name());
+			if (levels) {
+				listDir(fs, file.name(), levels - 1);
+			}
+		}
+		else {
+			Serial.print("  FILE: ");
+			Serial.print(file.name());
+			Serial.print("\tSIZE: ");
+			Serial.println(file.size());
+		}
+		file = root.openNextFile();
+	}
+}
+
 void setup()
 {
     pinMode(port[0], OUTPUT);
@@ -447,7 +483,23 @@ void setup()
         EEPROM.commit();
         Serial.println("Loaded default settings");
     }
-    xTaskCreate(TaskMinutes, "MINUTES", 1000, NULL, 3, &TaskClockMinuteHandle);
+	if (!SPIFFS.begin(true)) {
+		Serial.println("spiffs failed");
+	}
+	listDir(SPIFFS, "/", 0);
+	char* path = "/HomePage.html";
+	Serial.printf("Reading file: %s\r\n", path);
+	File file = SPIFFS.open(path);
+	if (!file || file.isDirectory()) {
+		Serial.println("- failed to open file for reading");
+		return;
+	}
+	Serial.println("- read from file:");
+	while (file.available()) {
+		Serial.write(file.readString().c_str());
+	}
+	file.close();
+	xTaskCreate(TaskMinutes, "MINUTES", 1000, NULL, 3, &TaskClockMinuteHandle);
     xTaskCreate(TaskMenu, "MENU", 9000, NULL, 6, &TaskMenuHandle);
     xTaskCreate(TaskWiFi, "WIFI", 4000, NULL, 2, &TaskWifiHandle);
 	xTaskCreate(TaskServer, "SERVER", 10000, NULL, 5, &TaskServerHandle);
