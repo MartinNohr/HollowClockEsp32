@@ -6,11 +6,11 @@
 #include <EEPROM.h>
 #include <freertos.h>
 #include <stdio.h>
-#include <wifi.h>
+#include <WiFi.h>
 #include <ESPmDNS.h>
 #include <time.h>
-#include <fs.h>
-#include <spiffs.h>
+#include <FS.h>
+#include <SPIFFS.h>
 
 SemaphoreHandle_t MutexRotateHandle;
 
