@@ -14,7 +14,7 @@
 
 SemaphoreHandle_t MutexRotateHandle;
 
-#define HC_VERSION 3  // change this when the settings structure is changed
+#define HC_VERSION 1  // change this when the settings structure is changed
 
 // Motor and clock parameters
 // 2048 * 90 / 12 / 60 = 256
@@ -90,10 +90,9 @@ struct tm gtime;
 
 void TaskMinutes(void* params)
 {
-	unsigned long secCounter = 0;
     // use this to make task run every second
     TickType_t xLastWakeTime;
-	const TickType_t xFrequency = pdMS_TO_TICKS(1000);
+	const TickType_t xFrequency = pdMS_TO_TICKS(1000 * 60);
     // Initialize the xLastWakeTime variable with the current time.
     xLastWakeTime = xTaskGetTickCount();
     Serial.println("waiting for internet time");
@@ -101,6 +100,7 @@ void TaskMinutes(void* params)
     while (!bGotTime) {
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
+	Serial.println("got internet time, setting clock");
     // calculate how far to move the clock from noon
     int howfar = (gtime.tm_hour % 12) * 60 + gtime.tm_min;
     //Serial.println(String("goto time: ") + howfar);
@@ -112,12 +112,22 @@ void TaskMinutes(void* params)
 	rotate(-STEPS_PER_MIN);
     // assume starting at noon
     rotate(STEPS_PER_MIN * howfar);
+	unsigned long uptimeMinutes = 0;
+	//portMUX_TYPE mux;
+	//portMUX_INITIALIZE(&mux);
+	Serial.println("starting minute task");
     for (;;) {
-		if (!settings.bTestMode && (secCounter++ % 60 == 0)) {
+		static char line[100];
+		//vPortEnterCritical(&mux);
+		sprintf(line, "running hours: %lu minutes: %lu", uptimeMinutes / 60, uptimeMinutes % 60);
+		//vPortExitCritical(&mux);
+		Serial.println(line);
+		if (!settings.bTestMode) {
 			rotate(STEPS_PER_MIN + SAFETY_MOTION); // go too far to handle ratchet (might not be there if 0)
 			if (SAFETY_MOTION)
 				rotate(-SAFETY_MOTION); // alignment
 		}
+		++uptimeMinutes;
 		// Wait for the next cycle.
 		vTaskDelayUntil(&xLastWakeTime, xFrequency);
 	}
@@ -128,49 +138,27 @@ void TaskMenu(void* params)
 	Serial.println("? for menu");
 	for (;;) {
 		if (Serial.available()) {
+			int argval = 0;
 			String str;
 			str = Serial.readString();
 			str.trim();
-			Serial.println("Received:" + str);
-			if (str.isEmpty())
-				str = "?";
+			//Serial.println("Received:" + str);
 			bool bSave = true;
 			char ch = str[0];
 			str = str.substring(1);
 			str.trim();
+			argval = str.toInt();
 			switch (toupper(ch)) {
-			case '?':
-				Serial.println("---------------------------");
-				Serial.print(String("Last Sync  : "));
-				Serial.println(&gtime, "%A, %B %d %Y %H:%M:%S");
-				Serial.println(String("Network    : ") + settings.cWifiID);
-				Serial.println(String("Password   : ") + settings.cWifiPWD);
-				Serial.println(String("UTC        : ") + (settings.utcOffsetInSeconds / 3600));
-				Serial.println(String("DST        : ") + (settings.bDST ? "ON" : "OFF"));
-				Serial.println(String("Step Delay : ") + settings.nStepSpeed + " mS");
-				Serial.println(String("Test mode  : ") + (settings.bTestMode ? "ON" : "OFF"));
-				Serial.println("---------------------------");
-				Serial.println("N<networkID>  = network name (case sensitive)");
-				Serial.println("P<password>   = password for network (case sensitive)");
-				Serial.println("U<-12 to +12> = utc offset in hours");
-				Serial.println("D             = toggle daylight saving (DST)");
-				Serial.println("S<2 to 10>    = stepper delay in mS");
-				Serial.println("T             = toggle test mode");
-				Serial.println("+<n>          = add one or more minutes");
-				Serial.println("-<n>          = subtract one or more minutes");
-				Serial.println();
-				bSave = false;
-				break;
 			case 'N':
 				if (str.length()) {
 					strncpy(settings.cWifiID, str.c_str(), sizeof(settings.cWifiID) - 1);
-					Serial.println("Network Name:" + str);
+					Serial.printf("Network Name: %s", str.c_str());
 				}
 				break;
 			case 'P':
 				if (str.length()) {
 					strncpy(settings.cWifiPWD, str.c_str(), sizeof(settings.cWifiPWD) - 1);
-					Serial.println("Password:" + str);
+					Serial.printf("Password: %s", str.c_str());
 				}
 				break;
 			case 'T':
@@ -186,6 +174,16 @@ void TaskMenu(void* params)
 				break;
 			case 'S':
 				settings.nStepSpeed = str.toInt();
+				break;
+			case 'A':  // adjust stepper position
+				if (argval == 0)
+					argval = 1;
+				rotate(argval);
+				// if negative move backwards to take up slack
+				if (argval < 0) {
+					rotate(-STEPS_PER_MIN);
+					rotate(STEPS_PER_MIN);
+				}
 				break;
 			case '+':
 				if (str.length()) {
@@ -208,6 +206,26 @@ void TaskMenu(void* params)
 				EEPROM.put(0, settings);
 				EEPROM.commit();
 			}
+			Serial.println("---------------------------");
+			Serial.print(String("Last Sync  : "));
+			Serial.println(&gtime, "%A, %B %d %Y %H:%M:%S");
+			Serial.println(String("Network    : ") + settings.cWifiID);
+			Serial.println(String("Password   : ") + settings.cWifiPWD);
+			Serial.println(String("UTC        : ") + (settings.utcOffsetInSeconds / 3600));
+			Serial.println(String("DST        : ") + (settings.bDST ? "ON" : "OFF"));
+			Serial.println(String("Step Delay : ") + settings.nStepSpeed + " mS");
+			Serial.println(String("Test mode  : ") + (settings.bTestMode ? "ON" : "OFF"));
+			Serial.println("---------------------------");
+			Serial.println("N<networkID>  = network name (case sensitive)");
+			Serial.println("P<password>   = password for network (case sensitive)");
+			Serial.println("U<-12 to +12> = utc offset in hours");
+			Serial.println("D             = toggle daylight saving (DST)");
+			Serial.println("A<n>          = Adjust Minute Position (+/- 256 is a full minute)");
+			Serial.println("S<2 to 10>    = stepper delay in mS");
+			Serial.println("T             = toggle test mode");
+			Serial.println("+<n>          = add one or more minutes");
+			Serial.println("-<n>          = subtract one or more minutes");
+			Serial.println("Command? ");
 		}
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}
@@ -297,7 +315,7 @@ void TaskWiFi(void* params)
 	bGotTime = true;
 	for (;;) {
         getLocalTime(&gtime);
-		Serial.printf("Time value : %02d:%02d\n\r", gtime.tm_hour, gtime.tm_min);
+		Serial.printf("Time value : %02d:%02d:%02d\n\r", gtime.tm_hour, gtime.tm_min, gtime.tm_sec);
 		//Serial.println("Time check : " + String(gtime.tm_hour) + ":" + gtime.tm_min);
 		vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
@@ -494,13 +512,13 @@ void setup()
 		Serial.println("- failed to open file for reading");
 		return;
 	}
-	Serial.println("- read from file:");
-	while (file.available()) {
-		Serial.write(file.readString().c_str());
-	}
+	//Serial.println("- read from file:");
+	//while (file.available()) {
+	//	Serial.write(file.readString().c_str());
+	//}
 	file.close();
-	xTaskCreate(TaskMinutes, "MINUTES", 1000, NULL, 3, &TaskClockMinuteHandle);
-    xTaskCreate(TaskMenu, "MENU", 9000, NULL, 6, &TaskMenuHandle);
+	xTaskCreate(TaskMinutes, "MINUTES", 9000, NULL, 1, &TaskClockMinuteHandle);
+    xTaskCreate(TaskMenu, "MENU", 9000, NULL, 3, &TaskMenuHandle);
     xTaskCreate(TaskWiFi, "WIFI", 4000, NULL, 2, &TaskWifiHandle);
 	xTaskCreate(TaskServer, "SERVER", 10000, NULL, 5, &TaskServerHandle);
 }
