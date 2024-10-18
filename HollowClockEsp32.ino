@@ -112,22 +112,24 @@ void TaskMinutes(void* params)
 	rotate(-STEPS_PER_MIN);
     // assume starting at noon
     rotate(STEPS_PER_MIN * howfar);
-	unsigned long uptimeMinutes = 0;
 	//portMUX_TYPE mux;
 	//portMUX_INITIALIZE(&mux);
 	Serial.println("starting minute task");
     for (;;) {
+		unsigned long nUptimeMinutes;
 		static char line[100];
 		//vPortEnterCritical(&mux);
-		sprintf(line, "running hours: %lu minutes: %lu", uptimeMinutes / 60, uptimeMinutes % 60);
+		//portDISABLE_INTERRUPTS();
+		sprintf(line, "running time (d:hr:mn) : %lu:%02lu:%02lu", nUptimeMinutes / 60 / 24, nUptimeMinutes / 60, nUptimeMinutes % 60);
 		//vPortExitCritical(&mux);
 		Serial.println(line);
+		//portENABLE_INTERRUPTS();
 		if (!settings.bTestMode) {
 			rotate(STEPS_PER_MIN + SAFETY_MOTION); // go too far to handle ratchet (might not be there if 0)
 			if (SAFETY_MOTION)
 				rotate(-SAFETY_MOTION); // alignment
 		}
-		++uptimeMinutes;
+		++nUptimeMinutes;
 		// Wait for the next cycle.
 		vTaskDelayUntil(&xLastWakeTime, xFrequency);
 	}
@@ -517,10 +519,10 @@ void setup()
 	//	Serial.write(file.readString().c_str());
 	//}
 	file.close();
-	xTaskCreate(TaskMinutes, "MINUTES", 9000, NULL, 1, &TaskClockMinuteHandle);
-    xTaskCreate(TaskMenu, "MENU", 9000, NULL, 3, &TaskMenuHandle);
-    xTaskCreate(TaskWiFi, "WIFI", 4000, NULL, 2, &TaskWifiHandle);
-	xTaskCreate(TaskServer, "SERVER", 10000, NULL, 5, &TaskServerHandle);
+	xTaskCreatePinnedToCore(TaskMinutes, "MINUTES", 9000, NULL, 1, &TaskClockMinuteHandle, 1);
+	xTaskCreatePinnedToCore(TaskMenu, "MENU", 9000, NULL, 3, &TaskMenuHandle, 1);
+	xTaskCreatePinnedToCore(TaskWiFi, "WIFI", 4000, NULL, 2, &TaskWifiHandle, 0);
+	xTaskCreatePinnedToCore(TaskServer, "SERVER", 10000, NULL, 5, &TaskServerHandle, 0);
 }
 
 void loop()
