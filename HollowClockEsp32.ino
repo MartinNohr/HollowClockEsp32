@@ -336,7 +336,7 @@ void TaskWiFi(void* params)
         getLocalTime(&gtime);
 		time(&g_NetTime);
 		Serial.printf("Time value : %02d:%02d:%02d\n\r", gtime.tm_hour, gtime.tm_min, gtime.tm_sec);
-		Serial.printf("Clock Time:%lld Net Time:%lld\n", g_ClockTime, g_NetTime);
+		Serial.printf("Clock Time:%lld Net Time:%lld diff:%lld\n", g_ClockTime, g_NetTime, (g_ClockTime - g_NetTime));
 		//Serial.println("Time check : " + String(gtime.tm_hour) + ":" + gtime.tm_min);
 		vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
@@ -358,6 +358,9 @@ void TaskServer(void* params)
 		vTaskDelay(pdMS_TO_TICKS(1000));
 	if (!MDNS.begin("hollowclock")) {   // Set the hostname to "hollowclock.local"
 		Serial.println("Error setting up MDNS responder!");
+	}
+	else {
+		Serial.println("MDNS: hollowclock");
 	}
 	server.begin();
 	for (;;) {
@@ -522,25 +525,25 @@ void setup()
         EEPROM.commit();
         Serial.println("Loaded default settings");
     }
-	if (!SPIFFS.begin(true)) {
-		Serial.println("spiffs failed");
-	}
-	listDir(SPIFFS, "/", 0);
-	char* path = "/HomePage.html";
-	Serial.printf("Reading file: %s\r\n", path);
-	File file = SPIFFS.open(path);
-	if (!file || file.isDirectory()) {
-		Serial.println("- failed to open file for reading");
-		return;
-	}
+	//if (!SPIFFS.begin(true)) {
+	//	Serial.println("spiffs failed");
+	//}
+	//listDir(SPIFFS, "/", 0);
+	//char* path = "/HomePage.html";
+	//Serial.printf("Reading file: %s\r\n", path);
+	//File file = SPIFFS.open(path);
+	//if (!file || file.isDirectory()) {
+	//	Serial.println("- failed to open file for reading");
+	//	return;
+	//}
 	//Serial.println("- read from file:");
 	//while (file.available()) {
 	//	Serial.write(file.readString().c_str());
 	//}
-	file.close();
+	//file.close();
 	xTaskCreatePinnedToCore(TaskMinutes, "MINUTES", 9000, NULL, 1, &TaskClockMinuteHandle, 1);
 	xTaskCreatePinnedToCore(TaskMenu, "MENU", 9000, NULL, 3, &TaskMenuHandle, 1);
-	xTaskCreatePinnedToCore(TaskWiFi, "WIFI", 4000, NULL, 2, &TaskWifiHandle, 0);
+	xTaskCreatePinnedToCore(TaskWiFi, "WIFI", 4000, NULL, 2, &TaskWifiHandle, 1);
 	xTaskCreatePinnedToCore(TaskServer, "SERVER", 10000, NULL, 5, &TaskServerHandle, 0);
 }
 
