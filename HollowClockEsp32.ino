@@ -87,6 +87,8 @@ TaskHandle_t TaskWifiHandle;
 TaskHandle_t TaskServerHandle;
 volatile bool bGotTime = false;
 struct tm gtime;
+time_t g_NetTime;
+time_t g_ClockTime;
 
 void TaskMinutes(void* params)
 {
@@ -120,9 +122,12 @@ void TaskMinutes(void* params)
 		static char line[100];
 		//vPortEnterCritical(&mux);
 		//portDISABLE_INTERRUPTS();
-		sprintf(line, "running time (d:hr:mn) : %lu:%02lu:%02lu", nUptimeMinutes / 60 / 24, nUptimeMinutes / 60, nUptimeMinutes % 60);
+		//sprintf(line, "running time (d:hr:mn) : %lu:%02lu:%02lu", nUptimeMinutes / 60 / 24, nUptimeMinutes / 60, nUptimeMinutes % 60);
+		//Serial.println(line);
+		//Serial.printf("clock time:%lld net time:%lld", g_ClockTime, g_NetTime);
+		// increment clock time by 1 minute
+		g_ClockTime += 60;
 		//vPortExitCritical(&mux);
-		Serial.println(line);
 		//portENABLE_INTERRUPTS();
 		if (!settings.bTestMode) {
 			rotate(STEPS_PER_MIN + SAFETY_MOTION); // go too far to handle ratchet (might not be there if 0)
@@ -145,7 +150,7 @@ void TaskMenu(void* params)
 			str = Serial.readString();
 			str.trim();
 			//Serial.println("Received:" + str);
-			bool bSave = true;
+			bool bSave = false;
 			char ch = str[0];
 			str = str.substring(1);
 			str.trim();
@@ -155,27 +160,38 @@ void TaskMenu(void* params)
 				if (str.length()) {
 					strncpy(settings.cWifiID, str.c_str(), sizeof(settings.cWifiID) - 1);
 					Serial.printf("Network Name: %s", str.c_str());
+					bSave = true;
 				}
 				break;
 			case 'P':
 				if (str.length()) {
 					strncpy(settings.cWifiPWD, str.c_str(), sizeof(settings.cWifiPWD) - 1);
 					Serial.printf("Password: %s", str.c_str());
+					bSave = true;
 				}
+				break;
+			case 'C':
+				settings.cWifiID[0] = '\0';
+				settings.cWifiPWD[0] = '\0';
+				bSave = true;
 				break;
 			case 'T':
 				settings.bTestMode = !settings.bTestMode;
+				bSave = true;
 				break;
 			case 'U':
 				settings.utcOffsetInSeconds = str.toInt() * 3600;
+				bSave = true;
 				break;
 			case 'D':
 				settings.bDST = !settings.bDST;
 				// adjust the time
 				rotate((settings.bDST ? 1 : -1) * 60 * STEPS_PER_MIN);
+				bSave = true;
 				break;
 			case 'S':
 				settings.nStepSpeed = str.toInt();
+				bSave = true;
 				break;
 			case 'A':  // adjust stepper position
 				if (argval == 0)
@@ -220,6 +236,7 @@ void TaskMenu(void* params)
 			Serial.println("---------------------------");
 			Serial.println("N<networkID>  = network name (case sensitive)");
 			Serial.println("P<password>   = password for network (case sensitive)");
+			Serial.println("C             = clear network name and password");
 			Serial.println("U<-12 to +12> = utc offset in hours");
 			Serial.println("D             = toggle daylight saving (DST)");
 			Serial.println("A<n>          = Adjust Minute Position (+/- 256 is a full minute)");
@@ -240,8 +257,8 @@ void TaskMenu(void* params)
 void TaskWiFi(void* params)
 {
 	TickType_t xLastWakeTime;
-	// check the time once per day
-	const TickType_t xFrequency = pdMS_TO_TICKS(24 * 60 * 60 * 1000);
+	// check the time once per day TODO: change * 1 to * 24
+	const TickType_t xFrequency = pdMS_TO_TICKS(1000) * 60 * 60 * 1;
 	// Initialize the xLastWakeTime variable with the current time.
 	xLastWakeTime = xTaskGetTickCount();
 	// init the WiFi
@@ -306,18 +323,20 @@ void TaskWiFi(void* params)
 		while (!getLocalTime(&gtime)) {
 			vTaskDelay(1000);
 		}
+		// get out two times for tracking and correction as needed
+		time(&g_ClockTime);
+		g_NetTime = g_ClockTime;
 		Serial.println(&gtime, "%A, %B %d %Y %H:%M:%S");
 		bGotTime = true;
 		vTaskDelay(10);
-		// get the epoch time, we'll use this later
-		time_t et;
-		time(&et);
 	}
 	// let the clock run anyway
 	bGotTime = true;
 	for (;;) {
         getLocalTime(&gtime);
+		time(&g_NetTime);
 		Serial.printf("Time value : %02d:%02d:%02d\n\r", gtime.tm_hour, gtime.tm_min, gtime.tm_sec);
+		Serial.printf("Clock Time:%lld Net Time:%lld\n", g_ClockTime, g_NetTime);
 		//Serial.println("Time check : " + String(gtime.tm_hour) + ":" + gtime.tm_min);
 		vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
