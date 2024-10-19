@@ -224,9 +224,13 @@ void TaskMenu(void* params)
 				EEPROM.put(0, settings);
 				EEPROM.commit();
 			}
+			struct tm *localT;
+			localT = localtime(&g_ClockTime);
 			Serial.println("---------------------------");
-			Serial.print(String("Last Sync  : "));
+			Serial.print("Last Sync  : ");
 			Serial.println(&gtime, "%A, %B %d %Y %H:%M:%S");
+			Serial.print("Clock Time : ");
+			Serial.println(localT, "%A, %B %d %Y %H:%M:%S");
 			Serial.println(String("Network    : ") + settings.cWifiID);
 			Serial.println(String("Password   : ") + settings.cWifiPWD);
 			Serial.println(String("UTC        : ") + (settings.utcOffsetInSeconds / 3600));
