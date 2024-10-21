@@ -14,14 +14,11 @@
 
 SemaphoreHandle_t MutexRotateHandle;
 
-#define HC_VERSION 1  // change this when the settings structure is changed
+#define HC_VERSION 2  // change this when the settings structure is changed
 
 // Motor and clock parameters
 // 2048 * 90 / 12 / 60 = 256
 #define STEPS_PER_MIN 256
-
-//#define SAFETY_MOTION (STEPS_PER_MIN) // use this for the ratchet version
-#define SAFETY_MOTION (0)
 
 // hold setting information in EEPROM
 struct {
@@ -29,7 +26,6 @@ struct {
     bool bReverse = false;
     bool bTestMode = false;
     int nStepSpeed = 2;
-    int nSafetyMotion = 0;
     char cWifiID[20] = "";
     char cWifiPWD[20] = "";
     long utcOffsetInSeconds = -7 * 3600;
@@ -69,7 +65,7 @@ void rotate(int step)
 			for (i = 0; i < 4; i++) {
 				digitalWrite(port[i], seq[phase][i]);
 			}
-			delay(dt);
+			vTaskDelay(dt);
 			if (dt > delaytime)
 				--dt;
 		}
@@ -89,6 +85,7 @@ volatile bool bGotTime = false;
 struct tm gtime;
 time_t g_NetTime;
 time_t g_ClockTime;
+unsigned long g_nUptimeMinutes;
 
 void TaskMinutes(void* params)
 {
@@ -118,25 +115,22 @@ void TaskMinutes(void* params)
 	//portMUX_INITIALIZE(&mux);
 	Serial.println("starting minute task");
     for (;;) {
-		unsigned long nUptimeMinutes;
 		static char line[100];
 		//vPortEnterCritical(&mux);
 		//portDISABLE_INTERRUPTS();
-		//sprintf(line, "running time (d:hr:mn) : %lu:%02lu:%02lu", nUptimeMinutes / 60 / 24, nUptimeMinutes / 60, nUptimeMinutes % 60);
+		//sprintf(line, "running time (d:hr:mn) : %lu:%02lu:%02lu", g_nUptimeMinutes / 60 / 24, g_nUptimeMinutes / 60, g_nUptimeMinutes % 60);
 		//Serial.println(line);
-		//Serial.printf("clock time:%lld net time:%lld", g_ClockTime, g_NetTime);
-		// increment clock time by 1 minute
-		g_ClockTime += 60;
+		//Serial.printf("clock time:%lld net time:%lld\n", g_ClockTime, g_NetTime);
 		//vPortExitCritical(&mux);
 		//portENABLE_INTERRUPTS();
 		if (!settings.bTestMode) {
-			rotate(STEPS_PER_MIN + SAFETY_MOTION); // go too far to handle ratchet (might not be there if 0)
-			if (SAFETY_MOTION)
-				rotate(-SAFETY_MOTION); // alignment
+			rotate(STEPS_PER_MIN);
 		}
-		++nUptimeMinutes;
 		// Wait for the next cycle.
 		vTaskDelayUntil(&xLastWakeTime, xFrequency);
+		++g_nUptimeMinutes;
+		// increment clock time by 1 minute
+		g_ClockTime += 60;
 	}
 }
 
@@ -188,6 +182,7 @@ void TaskMenu(void* params)
 				// adjust the time
 				rotate((settings.bDST ? 1 : -1) * 60 * STEPS_PER_MIN);
 				bSave = true;
+				g_ClockTime = g_NetTime;
 				break;
 			case 'S':
 				settings.nStepSpeed = str.toInt();
@@ -306,7 +301,7 @@ void TaskWiFi(void* params)
 			rotate(STEPS_PER_MIN);
 			vTaskDelay(pdMS_TO_TICKS(250));
 		}
-		// if no network wiggle 5 minutes back and forth
+		// if no network go 10 minutes back and forth
 		if (WiFi.status() != WL_CONNECTED) {
 			// running without a network
 			rotate(-10 * STEPS_PER_MIN);
@@ -327,7 +322,7 @@ void TaskWiFi(void* params)
 		while (!getLocalTime(&gtime)) {
 			vTaskDelay(1000);
 		}
-		// get out two times for tracking and correction as needed
+		// get our two times for tracking and correction as needed
 		time(&g_ClockTime);
 		g_NetTime = g_ClockTime;
 		Serial.println(&gtime, "%A, %B %d %Y %H:%M:%S");
@@ -341,7 +336,19 @@ void TaskWiFi(void* params)
 		time(&g_NetTime);
 		Serial.printf("Time value : %02d:%02d:%02d\n\r", gtime.tm_hour, gtime.tm_min, gtime.tm_sec);
 		Serial.printf("Clock Time:%lld Net Time:%lld diff:%lld\n", g_ClockTime, g_NetTime, (g_ClockTime - g_NetTime));
-		//Serial.println("Time check : " + String(gtime.tm_hour) + ":" + gtime.tm_min);
+		int diffMinutes = (g_ClockTime - g_NetTime) / 60;
+		if (diffMinutes > 0) {
+			// too fast, backup
+			rotate(-diffMinutes * STEPS_PER_MIN);
+			g_ClockTime = g_NetTime;
+			Serial.println(String("Clock adjusted back by: ") + diffMinutes);
+		}
+		else if (diffMinutes < 0) {
+			// too slow, speed up
+			rotate(diffMinutes * STEPS_PER_MIN);
+			g_ClockTime = g_NetTime;
+			Serial.println(String("Clock adjusted forward by: ") + diffMinutes);
+		}
 		vTaskDelayUntil(&xLastWakeTime, xFrequency);
     }
 }
@@ -364,7 +371,7 @@ void TaskServer(void* params)
 		Serial.println("Error setting up MDNS responder!");
 	}
 	else {
-		Serial.println("MDNS: hollowclock");
+		Serial.println("MDNS: hollowclock.local");
 	}
 	server.begin();
 	for (;;) {
@@ -423,7 +430,10 @@ void TaskServer(void* params)
 							// Web Page Heading
 							client.println("<body><h1>Hollow Clock</h1>");
 
-							client.println(String("<p>Time ") + gtime.tm_hour + ":" + gtime.tm_min + "</p>");
+							client.println(String("<p>Last Net Sync Time ") + gtime.tm_hour + ":" + gtime.tm_min + "</p>");
+							struct tm* localT;
+							localT = localtime(&g_ClockTime);
+							client.println(String("<p>Clock Time ") + localT->tm_hour + ":" + localT->tm_min + "</p>");
 							// Display current state, and ON/OFF buttons for DST 
 							client.println(String("<p>DST is ") + (settings.bDST ? "on" : "off") + "</p>");
 							// If the DST is off, it displays the ON button       
@@ -434,8 +444,8 @@ void TaskServer(void* params)
 								client.println("<p><a href=\"/dst/off\"><button class=\"button button2\">OFF</button></a></p>");
 							}
 							client.println(String("<p>UTC = ") + settings.utcOffsetInSeconds / 60 / 60 + "</p>");
-							client.println("<p><a href=\"/addminute\"><button class=\"button\">Add Minute</button></a></p>");
-							client.println("<p><a href=\"/subminute\"><button class=\"button\">Subtract Minute</button></a></p>");
+							client.println("<p>Adjust Minutes&nbsp;<a href=\"/addminute\"><button class=\"button\">+1</button></a>&nbsp;");
+							client.println("<a href = \"/subminute\"><button class=\"button\">-1</button></a></p>");
 
 							client.println("</body></html>");
 
@@ -464,6 +474,7 @@ void TaskServer(void* params)
 			//	rotate(60 * STEPS_PER_MIN);
 			//else if (adjustDST == -1)
 			//	rotate(-60 * STEPS_PER_MIN);
+			vTaskDelay(pdMS_TO_TICKS(100));
 		}
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}
@@ -546,9 +557,9 @@ void setup()
 	//}
 	//file.close();
 	xTaskCreatePinnedToCore(TaskMinutes, "MINUTES", 9000, NULL, 1, &TaskClockMinuteHandle, 1);
-	xTaskCreatePinnedToCore(TaskMenu, "MENU", 9000, NULL, 3, &TaskMenuHandle, 1);
+	xTaskCreatePinnedToCore(TaskMenu, "MENU", 9000, NULL, 5, &TaskMenuHandle, 1);
 	xTaskCreatePinnedToCore(TaskWiFi, "WIFI", 4000, NULL, 2, &TaskWifiHandle, 1);
-	xTaskCreatePinnedToCore(TaskServer, "SERVER", 10000, NULL, 5, &TaskServerHandle, 0);
+	xTaskCreatePinnedToCore(TaskServer, "SERVER", 10000, NULL, 5, &TaskServerHandle, 1);
 }
 
 void loop()
