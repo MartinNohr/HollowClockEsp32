@@ -51,6 +51,8 @@ static int seq[4][4] = {
 
 void rotate(int step)
 {
+	if (step == 0)
+		return;
 	if (xSemaphoreTake(MutexRotateHandle, portMAX_DELAY) == pdTRUE) {
 		// wait for a single step of stepper
 		int delaytime = settings.nStepSpeed;    // was 6 originally
@@ -89,9 +91,9 @@ unsigned long g_nUptimeMinutes;
 
 void TaskMinutes(void* params)
 {
-    // use this to make task run every second
+    // use this to make task run every minute
     TickType_t xLastWakeTime;
-	const TickType_t xFrequency = pdMS_TO_TICKS(1000 * 60);
+	const TickType_t xFrequency = pdMS_TO_TICKS(1000) * 60;
     // Initialize the xLastWakeTime variable with the current time.
     xLastWakeTime = xTaskGetTickCount();
     Serial.println("waiting for internet time");
@@ -120,7 +122,7 @@ void TaskMinutes(void* params)
 		//portDISABLE_INTERRUPTS();
 		//sprintf(line, "running time (d:hr:mn) : %lu:%02lu:%02lu", g_nUptimeMinutes / 60 / 24, g_nUptimeMinutes / 60, g_nUptimeMinutes % 60);
 		//Serial.println(line);
-		//Serial.printf("clock time:%lld net time:%lld\n", g_ClockTime, g_NetTime);
+		Serial.printf("clock time:%lld net time:%lld\n", g_ClockTime, g_NetTime);
 		//vPortExitCritical(&mux);
 		//portENABLE_INTERRUPTS();
 		if (!settings.bTestMode) {
@@ -247,6 +249,7 @@ void TaskMenu(void* params)
 		}
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}
+	vTaskDelay(pdMS_TO_TICKS(200));
 }
 
 /*
@@ -363,7 +366,7 @@ void TaskServer(void* params)
 	// Previous time
 	unsigned long previousTime = 0;
 	// Define timeout time in milliseconds (example: 2000ms = 2s)
-	const long timeoutTime = 2000;
+	const long timeoutTime = 4000;
 	// wait for WiFi to be ready
 	while (!bWifiConnected)
 		vTaskDelay(pdMS_TO_TICKS(1000));
@@ -374,8 +377,11 @@ void TaskServer(void* params)
 		Serial.println("MDNS: hollowclock.local");
 	}
 	server.begin();
+	//server.setNoDelay(true);
 	for (;;) {
-		WiFiClient client = server.available();   // Listen for incoming clients
+		//Serial.println("getting client");
+		WiFiClient client = server.accept();   // Listen for incoming clients
+		//Serial.println("after accept client");
 
 		if (client) {                             // If a new client connects,
 			int adjustDST = 0;
@@ -387,19 +393,19 @@ void TaskServer(void* params)
 				currentTime = millis();
 				if (client.available()) {             // if there's bytes to read from the client,
 					char c = client.read();             // read a byte, then
-					Serial.write(c);                    // print it out the serial monitor
+					//Serial.write(c);                    // print it out the serial monitor
 					header += c;
 					if (c == '\n') {                    // if the byte is a newline character
 						// if the current line is blank, you got two newline characters in a row.
 						// that's the end of the client HTTP request, so send a response:
 						if (currentLine.length() == 0) {
+							Serial.println(header);
 							// HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
 							// and a content-type so the client knows what's coming, then a blank line:
 							client.println("HTTP/1.1 200 OK");
 							client.println("Content-type:text/html");
 							client.println("Connection: close");
 							client.println();
-							//Serial.println(header);
 							// turns DST on and off
 							if (header.indexOf("GET /dst/on") >= 0) {
 								settings.bDST = false;
@@ -474,7 +480,7 @@ void TaskServer(void* params)
 			//	rotate(60 * STEPS_PER_MIN);
 			//else if (adjustDST == -1)
 			//	rotate(-60 * STEPS_PER_MIN);
-			vTaskDelay(pdMS_TO_TICKS(100));
+			vTaskDelay(pdMS_TO_TICKS(10));
 		}
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}
@@ -556,21 +562,23 @@ void setup()
 	//	Serial.write(file.readString().c_str());
 	//}
 	//file.close();
-	xTaskCreatePinnedToCore(TaskMinutes, "MINUTES", 9000, NULL, 1, &TaskClockMinuteHandle, 1);
-	xTaskCreatePinnedToCore(TaskMenu, "MENU", 9000, NULL, 5, &TaskMenuHandle, 1);
+	xTaskCreatePinnedToCore(TaskMinutes, "MINUTES", 10000, NULL, 1, &TaskClockMinuteHandle, 1);
+	xTaskCreatePinnedToCore(TaskMenu, "MENU", 9000, NULL, 3, &TaskMenuHandle, 1);
 	xTaskCreatePinnedToCore(TaskWiFi, "WIFI", 4000, NULL, 2, &TaskWifiHandle, 1);
-	xTaskCreatePinnedToCore(TaskServer, "SERVER", 10000, NULL, 5, &TaskServerHandle, 1);
+	xTaskCreatePinnedToCore(TaskServer, "SERVER", 10000, NULL, 0, &TaskServerHandle, 0);
 }
 
 void loop()
 {
     if (settings.bTestMode) {
         // just run the motor
-		rotate(60 * STEPS_PER_MIN);
+		rotate(10 * STEPS_PER_MIN);
     }
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(10000));
+	//Serial.println("--------------------");
 	//Serial.println(String("mins: ") + uxTaskGetStackHighWaterMark(TaskClockMinuteHandle));
 	//Serial.println(String("menu: ") + uxTaskGetStackHighWaterMark(TaskMenuHandle));
 	//Serial.println(String("wifi: ") + uxTaskGetStackHighWaterMark(TaskWifiHandle));
 	//Serial.println(String("srvr: ") + uxTaskGetStackHighWaterMark(TaskServerHandle));
+	//Serial.println("--------------------");
 }

@@ -4,20 +4,27 @@
 <head>
     <title>Hollow Clock</title>
     <style>
-        #timeInput {
-            width: 100px; /* Adjust as needed */
+        #utc {
+            width: 40px; /* Adjust as needed */
             /* Add any other styling you want */
+        }
+        #adjust {
+            width: 50px;
         }
     </style>
 </head>
 
 <body>
     <h1>Hollow Clock Settings</h1>
-    <form name="timeInput" action="post">
-        <input id="timeInput" name="hctime" ctime" type="time" size="50" value="00:00 00 am">&nbsp;current time
-        <br>
-        <hr style="width: 50%">
-        <input name="accept" type="submit" value="Update">
+    <form name="timeInput" action="get">
+        <label for="utc">UTC Hours:</label>
+        <input id="utc" name="utchours" type="number" size="10" value="-7">&nbsp;
+        <input name="accept" type="submit" value="update">
+    </form>
+    <form name="adjust" action="get">
+        <label for="adjust">Adjust:</label>
+        <input id="adjust" name="adjustamount" type="number" size="10" value="0">&nbsp;
+        <input name="accept" type="submit" value="adjust">
     </form>
 </body>
 
