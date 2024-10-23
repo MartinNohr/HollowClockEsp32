@@ -362,9 +362,9 @@ void TaskWiFi(void* params)
 void TaskServer(void* params)
 {
 	String header;
-	unsigned long currentTime = millis();
+	unsigned long currentTime;
 	// Previous time
-	unsigned long previousTime = 0;
+	unsigned long previousTime;
 	// Define timeout time in milliseconds (example: 2000ms = 2s)
 	const long timeoutTime = 4000;
 	// wait for WiFi to be ready
@@ -384,22 +384,21 @@ void TaskServer(void* params)
 		//Serial.println("after accept client");
 
 		if (client) {                             // If a new client connects,
-			int adjustDST = 0;
-			currentTime = millis();
-			previousTime = currentTime;
 			Serial.println("New Client.");          // print a message out in the serial port
+			int adjustDST = 0;
+			previousTime = currentTime = millis();
 			String currentLine = "";                // make a String to hold incoming data from the client
 			while (client.connected() && currentTime - previousTime <= timeoutTime) {  // loop while the client's connected
 				currentTime = millis();
 				if (client.available()) {             // if there's bytes to read from the client,
 					char c = client.read();             // read a byte, then
-					//Serial.write(c);                    // print it out the serial monitor
+					Serial.write(c);                    // print it out the serial monitor
 					header += c;
 					if (c == '\n') {                    // if the byte is a newline character
 						// if the current line is blank, you got two newline characters in a row.
 						// that's the end of the client HTTP request, so send a response:
 						if (currentLine.length() == 0) {
-							Serial.println(header);
+							//Serial.println(header);
 							// HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
 							// and a content-type so the client knows what's coming, then a blank line:
 							client.println("HTTP/1.1 200 OK");
@@ -408,11 +407,11 @@ void TaskServer(void* params)
 							client.println();
 							// turns DST on and off
 							if (header.indexOf("GET /dst/on") >= 0) {
-								settings.bDST = false;
+								settings.bDST = true;
 								adjustDST = -1;
 							}
 							else if (header.indexOf("GET /dst/off") >= 0) {
-								settings.bDST = true;
+								settings.bDST = false;
 								adjustDST = 1;
 							}
 							else if (header.indexOf("GET /addminute") >= 0) {
@@ -429,7 +428,7 @@ void TaskServer(void* params)
 							// CSS to style the on/off buttons 
 							// Feel free to change the background-color and font-size attributes to fit your preferences
 							client.println("<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}");
-							client.println(".button { background-color: #4CAF50; border: none; color: white; padding: 16px 40px;");
+							client.println(".button { background-color: #4CAF50; border: none; color: white; padding: 10px 30px;");
 							client.println("text-decoration: none; font-size: 30px; margin: 2px; cursor: pointer;}");
 							client.println(".button2 {background-color: #555555;}</style></head>");
 
@@ -444,10 +443,10 @@ void TaskServer(void* params)
 							client.println(String("<p>DST is ") + (settings.bDST ? "on" : "off") + "</p>");
 							// If the DST is off, it displays the ON button       
 							if (settings.bDST) {
-								client.println("<p><a href=\"/dst/on\"><button class=\"button\">ON</button></a></p>");
+								client.println("<p><a href=\"/dst/off\"><button class=\"button\">ON</button></a></p>");
 							}
 							else {
-								client.println("<p><a href=\"/dst/off\"><button class=\"button button2\">OFF</button></a></p>");
+								client.println("<p><a href=\"/dst/on\"><button class=\"button button2\">OFF</button></a></p>");
 							}
 							client.println(String("<p>UTC = ") + settings.utcOffsetInSeconds / 60 / 60 + "</p>");
 							client.println("<p>Adjust Minutes&nbsp;<a href=\"/addminute\"><button class=\"button\">+1</button></a>&nbsp;");
@@ -474,7 +473,7 @@ void TaskServer(void* params)
 			// Close the connection
 			client.stop();
 			Serial.println("Client disconnected.");
-			Serial.println("");
+			//Serial.println("");
 			// adjust DST if necessary
 			//if (adjustDST == 1)
 			//	rotate(60 * STEPS_PER_MIN);
@@ -565,7 +564,7 @@ void setup()
 	xTaskCreatePinnedToCore(TaskMinutes, "MINUTES", 10000, NULL, 1, &TaskClockMinuteHandle, 1);
 	xTaskCreatePinnedToCore(TaskMenu, "MENU", 9000, NULL, 3, &TaskMenuHandle, 1);
 	xTaskCreatePinnedToCore(TaskWiFi, "WIFI", 4000, NULL, 2, &TaskWifiHandle, 1);
-	xTaskCreatePinnedToCore(TaskServer, "SERVER", 10000, NULL, 0, &TaskServerHandle, 0);
+	xTaskCreatePinnedToCore(TaskServer, "SERVER", 10000, NULL, 0, &TaskServerHandle, 1);
 }
 
 void loop()
