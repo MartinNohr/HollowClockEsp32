@@ -225,6 +225,7 @@ void TaskMenu(void* params)
 			struct tm *localT;
 			localT = localtime(&g_ClockTime);
 			Serial.println("---------------------------");
+			Serial.println(String("ip         :") + WiFi.localIP().toString());
 			Serial.print("Last Sync  : ");
 			Serial.println(&gtime, "%A, %B %d %Y %H:%M:%S");
 			Serial.print("Clock Time : ");
