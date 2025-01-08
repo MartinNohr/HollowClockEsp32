@@ -318,8 +318,8 @@ void TaskWiFi(void* params)
 		while (waitForSmartConfig-- && !WiFi.smartConfigDone()) {
 			Serial.print(".");
 			// wiggle to show we are waiting for config from phone
-			rotate(1 * STEPS_PER_MIN);
 			rotate(-1 * STEPS_PER_MIN);
+			rotate(1 * STEPS_PER_MIN);
 			vTaskDelay(pdMS_TO_TICKS(400));
 		}
 		if (WiFi.smartConfigDone()) {
