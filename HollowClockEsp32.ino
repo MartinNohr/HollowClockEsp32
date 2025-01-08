@@ -7,10 +7,11 @@
 #include <freertos.h>
 #include <stdio.h>
 #include <WiFi.h>
+#include <WebServer.h>
 #include <ESPmDNS.h>
 #include <time.h>
 #include <FS.h>
-#include <SPIFFS.h>
+#include <LittleFS.h>
 
 SemaphoreHandle_t MutexRotateHandle;
 
@@ -33,7 +34,7 @@ struct {
 } settings;
 
 // Set web server port number to 80
-WiFiServer server(80);
+WebServer server(80);
 bool bWifiConnected = false;
 
 // ports used to control the stepper motor
@@ -252,6 +253,49 @@ void TaskMenu(void* params)
 	vTaskDelay(pdMS_TO_TICKS(200));
 }
 
+// the html to send
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <title>Hollow Clock</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        #timezone {
+            width: 40px; /* Adjust as needed */
+            /* Add any other styling you want */
+        }
+
+        #adjust {
+            width: 50px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Hollow Clock Settings</h1>
+    <form name="timezone" action="get">
+        <label for="timezone">Time Zone:<br /></label>
+        <input type="radio" id="pst_pdt" name="time_zone" value="PST_PDT">
+        <label for="pst_pdt">PST/PDT</label><br />
+        <input type="radio" id="mst_mdt" name="time_zone" value="MDT_MDT" checked="checked">
+        <label for="mst_mdt">MST/MDT</label><br />
+        <input type="radio" id="cst_cdt" name="time_zone" value="CST_CDT">
+        <label for="cst_cdt">CST/CDT</label><br />
+        <input type="radio" id="est_edt" name="time_zone" value="EST_EDT">
+        <label for="est_edt">EST/EDT</label><br />
+        <br />
+        <label for="adjust">Adjust Hands:</label><br />
+        <input id="adjust" name="adjustamount" type="number" size="10" value="0"><br />
+        <br />
+        <input name="accept" type="submit" value="Accept" />
+        <input name="cancel" type="submit" value="Cancel" />
+    </form>
+</body>
+</html>
+)rawliteral";
+
 /*
 * get the time once per day and compare and correct if necessary
 * TODO: the correction is not there yet
@@ -318,9 +362,9 @@ void TaskWiFi(void* params)
 		}
 		else {
 			bWifiConnected = true;
+			InitServer();
+			Serial.println(String("ip:") + WiFi.localIP().toString());
 		}
-		Serial.println("");
-		Serial.println(String("ip:") + WiFi.localIP().toString());
 		configTime(settings.utcOffsetInSeconds, settings.bDST ? 3600 : 0, "pool.ntp.org");
 		while (!getLocalTime(&gtime)) {
 			vTaskDelay(1000);
@@ -356,10 +400,72 @@ void TaskWiFi(void* params)
     }
 }
 
+String SendHTML()
+{
+	String line = "<!DOCTYPE html> <html>\n";
+	line += "<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
+	line += "<title>LED Control</title>\n";
+	line += "<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}\n";
+	line += "body{margin-top: 50px;} h1 {color: #444444;margin: 50px auto 30px;} h3 {color: #444444;margin-bottom: 50px;}\n";
+	line += ".button {display: inline-block; width: 80px;background-color: #3498db;border: none;color: white;padding: 13px 30px;text-decoration: none;font-size: 25px;margin: 0px auto 35px;cursor: pointer;border-radius: 4px;}\n";
+	line += ".button-on {background-color: #3498db;}\n";
+	line += ".button-on:active {background-color: #2980b9;}\n";
+	line += ".button-off {background-color: #34495e;}\n";
+	line += ".button-off:active {background-color: #2c3e50;}\n";
+	line += "p {font-size: 14px;color: #888;margin-bottom: 10px;}\n";
+	line += "label {display: inline-block;}";
+	line += "</style>\n";
+	line += "</head>\n";
+	line += "<body>\n";
+	line += "<h1>Hollow Clock</h1>\n";
+	char buf[100];
+	sprintf(buf, "<p>Last Sync Time : %02d:%02d:%02d</p>", gtime.tm_hour, gtime.tm_min, gtime.tm_sec);
+	line += buf;
+	struct tm* localT;
+	localT = localtime(&g_ClockTime);
+	sprintf(buf, "<p>Clock Time : %02d:%02d:%02d</p>", localT->tm_hour, localT->tm_min, localT->tm_sec);
+	line += buf;
+	if (settings.bDST) {
+		line += "<label for = \"dston\">Click off : </label>";
+		line += "<a class=\"button button-off\" id=\"dston\" href = \"/dstoff\">ON</a>\n";
+	}
+	else {
+		line += "<label for = \"dstoff\">Click on : </label>";
+		line += "<a class=\"button button-on\" id=\"dstoff\" href=\"/dston\">OFF</a>\n";
+	}
+	line += "</body>\n";
+	line += "</html>\n";
+	return line;
+}
+
+void handle_OnConnect() {
+	Serial.println("on connect");
+	server.send(200, "text/html", SendHTML());
+}
+
+void handle_OnDSTon()
+{
+	Serial.println("dst on");
+	settings.bDST = true;
+	server.send(200, "text/html", SendHTML());
+}
+
+void handle_OnDSToff()
+{
+	Serial.println("dst off");
+	settings.bDST = false;
+	server.send(200, "text/html", SendHTML());
+}
+
+void handle_NotFound()
+{
+	server.send(404, "text/plain", "Not found");
+}
+
 /*
-* handle the web server for adjusting settings
+* init web server
 */
-void TaskServer(void* params)
+void InitServer()
 {
 	String header;
 	unsigned long currentTime;
@@ -368,121 +474,20 @@ void TaskServer(void* params)
 	// Define timeout time in milliseconds (example: 2000ms = 2s)
 	const long timeoutTime = 4000;
 	// wait for WiFi to be ready
-	while (!bWifiConnected)
-		vTaskDelay(pdMS_TO_TICKS(1000));
+	//while (!bWifiConnected)
+	//	vTaskDelay(pdMS_TO_TICKS(1000));
+	Serial.println("");
 	if (!MDNS.begin("hollowclock")) {   // Set the hostname to "hollowclock.local"
 		Serial.println("Error setting up MDNS responder!");
 	}
 	else {
 		Serial.println("MDNS: hollowclock.local");
 	}
+	server.on("/dston", handle_OnDSTon);
+	server.on("/dstoff", handle_OnDSToff);
+	server.onNotFound(handle_NotFound);
 	server.begin();
-	//server.setNoDelay(true);
-	for (;;) {
-		//Serial.println("getting client");
-		WiFiClient client = server.accept();   // Listen for incoming clients
-		//Serial.println("after accept client");
-
-		if (client) {                             // If a new client connects,
-			Serial.println("New Client.");          // print a message out in the serial port
-			int adjustDST = 0;
-			previousTime = currentTime = millis();
-			String currentLine = "";                // make a String to hold incoming data from the client
-			while (client.connected() && currentTime - previousTime <= timeoutTime) {  // loop while the client's connected
-				currentTime = millis();
-				if (client.available()) {             // if there's bytes to read from the client,
-					char c = client.read();             // read a byte, then
-					Serial.write(c);                    // print it out the serial monitor
-					header += c;
-					if (c == '\n') {                    // if the byte is a newline character
-						// if the current line is blank, you got two newline characters in a row.
-						// that's the end of the client HTTP request, so send a response:
-						if (currentLine.length() == 0) {
-							//Serial.println(header);
-							// HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
-							// and a content-type so the client knows what's coming, then a blank line:
-							client.println("HTTP/1.1 200 OK");
-							client.println("Content-type:text/html");
-							client.println("Connection: close");
-							client.println();
-							// turns DST on and off
-							if (header.indexOf("GET /dst/on") >= 0) {
-								settings.bDST = true;
-								adjustDST = -1;
-							}
-							else if (header.indexOf("GET /dst/off") >= 0) {
-								settings.bDST = false;
-								adjustDST = 1;
-							}
-							else if (header.indexOf("GET /addminute") >= 0) {
-								rotate(STEPS_PER_MIN);
-							}
-							else if (header.indexOf("GET /subminute") >= 0) {
-								rotate(-STEPS_PER_MIN);
-							}
-
-							// Display the HTML web page
-							client.println("<!DOCTYPE html><html>");
-							client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-							client.println("<link rel=\"icon\" href=\"data:,\">");
-							// CSS to style the on/off buttons 
-							// Feel free to change the background-color and font-size attributes to fit your preferences
-							client.println("<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}");
-							client.println(".button { background-color: #4CAF50; border: none; color: white; padding: 10px 30px;");
-							client.println("text-decoration: none; font-size: 30px; margin: 2px; cursor: pointer;}");
-							client.println(".button2 {background-color: #555555;}</style></head>");
-
-							// Web Page Heading
-							client.println("<body><h1>Hollow Clock</h1>");
-
-							client.println(String("<p>Last Net Sync Time ") + gtime.tm_hour + ":" + gtime.tm_min + "</p>");
-							struct tm* localT;
-							localT = localtime(&g_ClockTime);
-							client.println(String("<p>Clock Time ") + localT->tm_hour + ":" + localT->tm_min + "</p>");
-							// Display current state, and ON/OFF buttons for DST 
-							client.println(String("<p>DST is ") + (settings.bDST ? "on" : "off") + "</p>");
-							// If the DST is off, it displays the ON button       
-							if (settings.bDST) {
-								client.println("<p><a href=\"/dst/off\"><button class=\"button\">ON</button></a></p>");
-							}
-							else {
-								client.println("<p><a href=\"/dst/on\"><button class=\"button button2\">OFF</button></a></p>");
-							}
-							client.println(String("<p>UTC = ") + settings.utcOffsetInSeconds / 60 / 60 + "</p>");
-							client.println("<p>Adjust Minutes&nbsp;<a href=\"/addminute\"><button class=\"button\">+1</button></a>&nbsp;");
-							client.println("<a href = \"/subminute\"><button class=\"button\">-1</button></a></p>");
-
-							client.println("</body></html>");
-
-							// The HTTP response ends with another blank line
-							client.println();
-							// Break out of the while loop
-							break;
-						}
-						else { // if you got a newline, then clear currentLine
-							currentLine = "";
-						}
-					}
-					else if (c != '\r') {  // if you got anything else but a carriage return character,
-						currentLine += c;      // add it to the end of the currentLine
-					}
-				}
-			}
-			// Clear the header variable
-			header = "";
-			// Close the connection
-			client.stop();
-			Serial.println("Client disconnected.");
-			//Serial.println("");
-			// adjust DST if necessary
-			//if (adjustDST == 1)
-			//	rotate(60 * STEPS_PER_MIN);
-			//else if (adjustDST == -1)
-			//	rotate(-60 * STEPS_PER_MIN);
-			vTaskDelay(pdMS_TO_TICKS(10));
-		}
-		vTaskDelay(pdMS_TO_TICKS(100));
-	}
+	Serial.println("web server started");
 }
 
 void listDir(fs::FS& fs, const char* dirname, uint8_t levels)
@@ -545,13 +550,13 @@ void setup()
         EEPROM.commit();
         Serial.println("Loaded default settings");
     }
-	//if (!SPIFFS.begin(true)) {
-	//	Serial.println("spiffs failed");
+	//if (LittleFS.begin(true)) {
+	//	Serial.println("LittleFS init failed");
 	//}
-	//listDir(SPIFFS, "/", 0);
+	//listDir(LittleFS, "/", 0);
 	//char* path = "/HomePage.html";
 	//Serial.printf("Reading file: %s\r\n", path);
-	//File file = SPIFFS.open(path);
+	//File file = LittleFS.open(path);
 	//if (!file || file.isDirectory()) {
 	//	Serial.println("- failed to open file for reading");
 	//	return;
@@ -561,10 +566,9 @@ void setup()
 	//	Serial.write(file.readString().c_str());
 	//}
 	//file.close();
-	xTaskCreatePinnedToCore(TaskMinutes, "MINUTES", 10000, NULL, 1, &TaskClockMinuteHandle, 1);
+	xTaskCreatePinnedToCore(TaskMinutes, "MINUTES", 10000, NULL, 0, &TaskClockMinuteHandle, 1);
 	xTaskCreatePinnedToCore(TaskMenu, "MENU", 9000, NULL, 3, &TaskMenuHandle, 1);
 	xTaskCreatePinnedToCore(TaskWiFi, "WIFI", 4000, NULL, 2, &TaskWifiHandle, 1);
-	xTaskCreatePinnedToCore(TaskServer, "SERVER", 10000, NULL, 0, &TaskServerHandle, 1);
 }
 
 void loop()
@@ -572,8 +576,12 @@ void loop()
     if (settings.bTestMode) {
         // just run the motor
 		rotate(10 * STEPS_PER_MIN);
-    }
-    vTaskDelay(pdMS_TO_TICKS(10000));
+		vTaskDelay(pdMS_TO_TICKS(10));
+	}
+	//vTaskDelay(pdMS_TO_TICKS(1000));
+	//Serial.print('.');
+	server.handleClient();
+	//Serial.print('*');
 	//Serial.println("--------------------");
 	//Serial.println(String("mins: ") + uxTaskGetStackHighWaterMark(TaskClockMinuteHandle));
 	//Serial.println(String("menu: ") + uxTaskGetStackHighWaterMark(TaskMenuHandle));
