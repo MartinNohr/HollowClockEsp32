@@ -277,17 +277,17 @@ const char index_html[] PROGMEM = R"rawliteral(
     <h1>Hollow Clock Settings</h1>
     <form name="timezone" action="get">
         <label for="timezone">Time Zone:<br /></label>
-        <input type="radio" id="pst_pdt" name="time_zone" value="PST_PDT">
+        <input type="radio" id="pst_pdt" name="time_zone" value="PST8PDT">
         <label for="pst_pdt">PST/PDT</label><br />
-        <input type="radio" id="mst_mdt" name="time_zone" value="MDT_MDT" checked="checked">
+        <input type="radio" id="mst_mdt" name="time_zone" value="MDT7MDT" checked="checked">
         <label for="mst_mdt">MST/MDT</label><br />
-        <input type="radio" id="cst_cdt" name="time_zone" value="CST_CDT">
+        <input type="radio" id="cst_cdt" name="time_zone" value="CST6CDT">
         <label for="cst_cdt">CST/CDT</label><br />
-        <input type="radio" id="est_edt" name="time_zone" value="EST_EDT">
+        <input type="radio" id="est_edt" name="time_zone" value="EST5EDT">
         <label for="est_edt">EST/EDT</label><br />
         <br />
         <label for="adjust">Adjust Hands:</label><br />
-        <input id="adjust" name="adjustamount" type="number" size="10" value="0"><br />
+        <input id="adjust" name="adjust_amount" type="number" size="10" value="0"><br />
         <br />
         <input name="accept" type="submit" value="Accept" />
         <input name="cancel" type="submit" value="Cancel" />
@@ -402,39 +402,40 @@ void TaskWiFi(void* params)
 
 String SendHTML()
 {
-	String line = "<!DOCTYPE html> <html>\n";
-	line += "<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
-	line += "<title>LED Control</title>\n";
-	line += "<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}\n";
-	line += "body{margin-top: 50px;} h1 {color: #444444;margin: 50px auto 30px;} h3 {color: #444444;margin-bottom: 50px;}\n";
-	line += ".button {display: inline-block; width: 80px;background-color: #3498db;border: none;color: white;padding: 13px 30px;text-decoration: none;font-size: 25px;margin: 0px auto 35px;cursor: pointer;border-radius: 4px;}\n";
-	line += ".button-on {background-color: #3498db;}\n";
-	line += ".button-on:active {background-color: #2980b9;}\n";
-	line += ".button-off {background-color: #34495e;}\n";
-	line += ".button-off:active {background-color: #2c3e50;}\n";
-	line += "p {font-size: 14px;color: #888;margin-bottom: 10px;}\n";
-	line += "label {display: inline-block;}";
-	line += "</style>\n";
-	line += "</head>\n";
-	line += "<body>\n";
-	line += "<h1>Hollow Clock</h1>\n";
-	char buf[100];
-	sprintf(buf, "<p>Last Sync Time : %02d:%02d:%02d</p>", gtime.tm_hour, gtime.tm_min, gtime.tm_sec);
-	line += buf;
-	struct tm* localT;
-	localT = localtime(&g_ClockTime);
-	sprintf(buf, "<p>Clock Time : %02d:%02d:%02d</p>", localT->tm_hour, localT->tm_min, localT->tm_sec);
-	line += buf;
-	if (settings.bDST) {
-		line += "<label for = \"dston\">Click off : </label>";
-		line += "<a class=\"button button-off\" id=\"dston\" href = \"/dstoff\">ON</a>\n";
-	}
-	else {
-		line += "<label for = \"dstoff\">Click on : </label>";
-		line += "<a class=\"button button-on\" id=\"dstoff\" href=\"/dston\">OFF</a>\n";
-	}
-	line += "</body>\n";
-	line += "</html>\n";
+	//String line = "<!DOCTYPE html> <html>\n";
+	//line += "<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">\n";
+	//line += "<title>LED Control</title>\n";
+	//line += "<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}\n";
+	//line += "body{margin-top: 50px;} h1 {color: #444444;margin: 50px auto 30px;} h3 {color: #444444;margin-bottom: 50px;}\n";
+	//line += ".button {display: inline-block; width: 80px;background-color: #3498db;border: none;color: white;padding: 13px 30px;text-decoration: none;font-size: 25px;margin: 0px auto 35px;cursor: pointer;border-radius: 4px;}\n";
+	//line += ".button-on {background-color: #3498db;}\n";
+	//line += ".button-on:active {background-color: #2980b9;}\n";
+	//line += ".button-off {background-color: #34495e;}\n";
+	//line += ".button-off:active {background-color: #2c3e50;}\n";
+	//line += "p {font-size: 14px;color: #888;margin-bottom: 10px;}\n";
+	//line += "label {display: inline-block;}";
+	//line += "</style>\n";
+	//line += "</head>\n";
+	//line += "<body>\n";
+	//line += "<h1>Hollow Clock</h1>\n";
+	//char buf[100];
+	//sprintf(buf, "<p>Last Sync Time : %02d:%02d:%02d</p>", gtime.tm_hour, gtime.tm_min, gtime.tm_sec);
+	//line += buf;
+	//struct tm* localT;
+	//localT = localtime(&g_ClockTime);
+	//sprintf(buf, "<p>Clock Time : %02d:%02d:%02d</p>", localT->tm_hour, localT->tm_min, localT->tm_sec);
+	//line += buf;
+	//if (settings.bDST) {
+	//	line += "<label for = \"dston\">Click off : </label>";
+	//	line += "<a class=\"button button-off\" id=\"dston\" href = \"/dstoff\">ON</a>\n";
+	//}
+	//else {
+	//	line += "<label for = \"dstoff\">Click on : </label>";
+	//	line += "<a class=\"button button-on\" id=\"dstoff\" href=\"/dston\">OFF</a>\n";
+	//}
+	//line += "</body>\n";
+	//line += "</html>\n";
+	String line = index_html;
 	return line;
 }
 
@@ -443,19 +444,27 @@ void handle_OnConnect() {
 	server.send(200, "text/html", SendHTML());
 }
 
-void handle_OnDSTon()
-{
-	Serial.println("dst on");
-	settings.bDST = true;
+void handle_OnGet() {
+	Serial.println("on get");
 	server.send(200, "text/html", SendHTML());
+	Serial.println("arg0:" + server.argName(0) + " val:" + server.arg(0));
+	Serial.println("arg1:" + server.argName(1) + " val:" + server.arg(1));
+	Serial.println("arg2:" + server.argName(2) + " val:" + server.arg(2));
 }
 
-void handle_OnDSToff()
-{
-	Serial.println("dst off");
-	settings.bDST = false;
-	server.send(200, "text/html", SendHTML());
-}
+//void handle_OnDSTon()
+//{
+//	Serial.println("dst on");
+//	settings.bDST = true;
+//	server.send(200, "text/html", SendHTML());
+//}
+//
+//void handle_OnDSToff()
+//{
+//	Serial.println("dst off");
+//	settings.bDST = false;
+//	server.send(200, "text/html", SendHTML());
+//}
 
 void handle_NotFound()
 {
@@ -483,8 +492,10 @@ void InitServer()
 	else {
 		Serial.println("MDNS: hollowclock.local");
 	}
-	server.on("/dston", handle_OnDSTon);
-	server.on("/dstoff", handle_OnDSToff);
+	server.on("/", handle_OnConnect);
+	server.on("/get", handle_OnGet);
+	//server.on("/dston", handle_OnDSTon);
+	//server.on("/dstoff", handle_OnDSToff);
 	server.onNotFound(handle_NotFound);
 	server.begin();
 	Serial.println("web server started");
