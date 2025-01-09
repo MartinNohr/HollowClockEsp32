@@ -448,9 +448,11 @@ void handle_OnConnect() {
 void handle_OnGet() {
 	Serial.println("on get");
 	server.send(200, "text/html", SendHTML());
-	Serial.println("arg0:" + server.argName(0) + " val:" + server.arg(0));
-	Serial.println("arg1:" + server.argName(1) + " val:" + server.arg(1));
 	Serial.println("arg2:" + server.argName(2) + " val:" + server.arg(2));
+	if (server.arg("accept") == "Accept") {
+		Serial.println("arg0:" + server.argName(0) + " val:" + server.arg(0));
+		Serial.println("arg1:" + server.argName(1) + " val:" + server.arg(1));
+	}
 }
 
 //void handle_OnDSTon()
