@@ -39,16 +39,8 @@ bool bWifiConnected = false;
 
 // ports used to control the stepper motor
 // if your motor rotates in the opposite direction, 
-// change the order as {2, 3, 4, 5};
-static int port[4] = { 10, 11, 12, 13 };
-
-// sequence of stepper motor control
-static int seq[4][4] = {
-  {  LOW,  LOW, HIGH,  LOW},
-  {  LOW,  LOW,  LOW, HIGH},
-  { HIGH,  LOW,  LOW,  LOW},
-  {  LOW, HIGH,  LOW,  LOW}
-};
+// reverse the pin address below
+static int port[4] = { 12, 13, 10, 11 };
 
 void rotate(int step)
 {
@@ -66,7 +58,8 @@ void rotate(int step)
 		for (j = 0; j < step; j++) {
 			phase = (phase + delta) % 4;
 			for (i = 0; i < 4; i++) {
-				digitalWrite(port[i], seq[phase][i]);
+				// turn on the port for the phase value and turn off the others
+				digitalWrite(port[i], phase == i);
 			}
 			vTaskDelay(dt);
 			if (dt > delaytime)
